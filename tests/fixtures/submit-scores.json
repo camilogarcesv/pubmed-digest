@@ -1,0 +1,14 @@
+{
+  "scores": [
+    {
+      "pmid": "40123456",
+      "relevance": 9,
+      "reason": "Trombectomía en oclusión de gran vaso con selección por perfusión de RM: muy relevante."
+    },
+    {
+      "pmid": "40123457",
+      "relevance": 2,
+      "reason": "Reconstrucción por deep learning en TC abdominal: fuera del perfil neuro (sin resumen)."
+    }
+  ]
+}

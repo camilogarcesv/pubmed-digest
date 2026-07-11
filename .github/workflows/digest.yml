@@ -1,0 +1,54 @@
+name: Weekly PubMed digest
+
+on:
+  schedule:
+    # Mondays 12:00 UTC. Cron can drift a few minutes; lookbackDays=8 absorbs the jitter
+    # and the seen-ledger makes the 1-day overlap harmless (no repeats).
+    - cron: "0 12 * * 1"
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+# Needed so the job can commit the updated state.json back to the repo.
+permissions:
+  contents: write
+
+concurrency:
+  group: pubmed-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version comes from the "packageManager" field in package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run digest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          EUTILS_EMAIL: ${{ secrets.EUTILS_EMAIL }}
+        run: pnpm dev:digest
+
+      - name: Commit updated state
+        run: |
+          # state.json is gitignored (see .gitignore) so local runs don't dirty the repo,
+          # so force-add it here. Once committed it becomes tracked and -f is a no-op.
+          git add -f state.json 2>/dev/null || true
+          if git diff --cached --quiet -- state.json; then
+            echo "No state changes to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: update digest state [skip ci]"
+            git push
+          fi

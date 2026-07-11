@@ -1,0 +1,43 @@
+# Perfil de interés — ESTE es el "mando" principal del scorer.
+# Edítalo libremente: cuanto mejor describa a tu colega, mejor filtra.
+# Se carga y valida al arrancar (ver src/profile.ts).
+
+description: >
+  Neurorradiólogo con enfoque clínico en neurorradiología diagnóstica e
+  intervencionista, neuroimagen vascular y radiología de urgencias neurológicas.
+  Le interesan estudios de RM y TC de cerebro, cabeza y cuello y columna con
+  aplicabilidad clínica directa: protocolos, hallazgos diagnósticos, técnicas
+  avanzadas (perfusión, difusión, susceptibilidad, RM de alto campo) y avances en
+  el tratamiento endovascular del ictus y de los aneurismas. También le importa la
+  IA aplicada a neuroimagen cuando está validada clínicamente.
+
+topics:
+  - ictus isquémico agudo y trombectomía mecánica
+  - oclusión de gran vaso (LVO)
+  - aneurismas intracraneales y tratamiento endovascular
+  - RM avanzada de cerebro (perfusión, difusión, SWI)
+  - tumores cerebrales y neurooncología por imagen
+  - neuroimagen de urgencias (trauma craneal, hemorragia, código ictus)
+  - imagen de cabeza y cuello
+  - IA / deep learning en neuroimagen (validado clínicamente)
+
+must_have:
+  - relevancia neurorradiológica o de neuroimagen del sistema nervioso central
+
+nice_to_have:
+  - validación clínica o cohortes de pacientes reales
+  - impacto en el flujo de trabajo o en la toma de decisiones clínicas
+  - técnicas de RM/TC novedosas con traslación práctica
+
+exclude:
+  - estudios puramente preclínicos en animales sin traslación clínica
+  - física de resonancia sin aplicación clínica
+  - imagen no neurológica (abdominal, musculoesquelética, mama, etc.) salvo solape claro
+
+exemplar_papers:
+  # Reemplaza estos por artículos concretos que a tu colega le hayan encantado
+  # (título y, si lo tienes, el PMID). Solo se usan como referencia de estilo.
+  - title: "Mechanical thrombectomy for stroke with a large ischemic core"
+    pmid: "36762865"
+  - title: "DWI-FLAIR mismatch to guide thrombolysis in wake-up stroke"
+    pmid: "29766770"

@@ -1,0 +1,65 @@
+<?xml version="1.0" ?>
+<!DOCTYPE PubmedArticleSet PUBLIC "-//NLM//DTD PubMedArticle//EN" "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed.dtd">
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation Status="Publisher" Owner="NLM">
+      <PMID Version="1">40123456</PMID>
+      <Article PubModel="Print-Electronic">
+        <Journal>
+          <ISOAbbreviation>AJNR Am J Neuroradiol</ISOAbbreviation>
+          <Title>AJNR. American Journal of Neuroradiology</Title>
+          <JournalIssue>
+            <PubDate>
+              <Year>2026</Year>
+              <Month>Jul</Month>
+              <Day>03</Day>
+            </PubDate>
+          </JournalIssue>
+        </Journal>
+        <ArticleTitle>Mechanical Thrombectomy Outcomes in Large Vessel Occlusion Stroke.</ArticleTitle>
+        <Abstract>
+          <AbstractText Label="BACKGROUND" NlmCategory="BACKGROUND">Large vessel occlusion stroke carries high morbidity.</AbstractText>
+          <AbstractText Label="METHODS" NlmCategory="METHODS">We reviewed 250 patients undergoing thrombectomy with MRI perfusion selection.</AbstractText>
+          <AbstractText Label="RESULTS" NlmCategory="RESULTS">Successful recanalization improved 90-day functional outcomes.</AbstractText>
+        </Abstract>
+        <AuthorList CompleteYN="Y">
+          <Author ValidYN="Y">
+            <LastName>Garcia</LastName>
+            <ForeName>Maria</ForeName>
+            <Initials>M</Initials>
+          </Author>
+          <Author ValidYN="Y">
+            <LastName>Smith</LastName>
+            <ForeName>John</ForeName>
+            <Initials>J</Initials>
+          </Author>
+        </AuthorList>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation Status="Publisher" Owner="NLM">
+      <PMID Version="1">40123457</PMID>
+      <Article PubModel="Electronic-eCollection">
+        <Journal>
+          <ISOAbbreviation>Eur Radiol</ISOAbbreviation>
+          <Title>European Radiology</Title>
+          <JournalIssue>
+            <PubDate>
+              <Year>2026</Year>
+              <Month>Jul</Month>
+            </PubDate>
+          </JournalIssue>
+        </Journal>
+        <ArticleTitle>Deep Learning Reconstruction for Abdominal CT: A Prospective Study.</ArticleTitle>
+        <AuthorList CompleteYN="Y">
+          <Author ValidYN="Y">
+            <LastName>Rossi</LastName>
+            <ForeName>Luca</ForeName>
+            <Initials>L</Initials>
+          </Author>
+        </AuthorList>
+      </Article>
+    </MedlineCitation>
+  </PubmedArticle>
+</PubmedArticleSet>

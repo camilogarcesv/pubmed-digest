@@ -1,0 +1,31 @@
+{
+  "name": "pubmed-digest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.11.0",
+  "description": "Pull newly-published PubMed papers, score them against a personal interest profile with the Anthropic API, and deliver a top-matches digest via Telegram.",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "dev:digest": "tsx src/index.ts digest",
+    "dev:search": "tsx src/index.ts search",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.68.0",
+    "dotenv": "16.4.7",
+    "fast-xml-parser": "4.5.1",
+    "yaml": "2.6.1",
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "vitest": "2.1.8"
+  }
+}

@@ -1,0 +1,4 @@
+# pnpm 10+ reads settings from here (no longer from the "pnpm" key in package.json).
+# esbuild ships a prebuilt binary via a postinstall step; tsx and vitest depend on it.
+allowBuilds:
+  esbuild: true
