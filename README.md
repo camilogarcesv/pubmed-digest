@@ -57,6 +57,33 @@ pnpm test        # vitest (offline; no live network)
 
 ---
 
+## Cheap test iteration (cache & recipients)
+
+Scoring costs money, so when you're only tweaking delivery or rendering, **cache one run and
+replay it for free**:
+
+```bash
+# Build the cache once (pays Anthropic once): real fetch + score, no delivery, no state
+pnpm dev:digest -- --limit 5 --dry-run --save-cache
+
+# Replay it as many times as you want — no PubMed, no Anthropic, no state:
+pnpm dev:digest -- --from-cache --to me          # deliver only to you
+pnpm dev:digest -- --from-cache --to me,amigo     # deliver to you + a friend
+pnpm dev:digest -- --from-cache --dry-run         # print only (nobody)
+
+# Tuning profile.yaml later? Re-score the SAME papers (skips PubMed, pays Anthropic):
+pnpm dev:digest -- --rescore --dry-run --save-cache
+```
+
+**Recipients.** `TELEGRAM_CHAT_ID` is always recipient `me`. Add more in `TELEGRAM_RECIPIENTS`
+(`me:111,amigo:222`) and pick them with `--to`. Without `--to`, **only `me` receives** — a friend
+is messaged only when you name them (`--to me,amigo` or `--to all`). `--dry-run` delivers to nobody.
+If one recipient's chat id is wrong, the rest still receive the digest and the failure is reported.
+
+The cache lives in `.cache/` (gitignored). `search` takes the same flags (`.cache/search.json`).
+
+---
+
 ## Tokens
 
 All secrets come from the environment (`.env` locally; repository secrets in CI). Never commit `.env`.
@@ -65,7 +92,8 @@ All secrets come from the environment (`.env` locally; repository secrets in CI)
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | yes (also for `--dry-run`, since scoring always runs) | [Anthropic Console](https://console.anthropic.com/) → API Keys. |
 | `TELEGRAM_BOT_TOKEN` | for real delivery only | In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, follow the prompts; it returns a token. |
-| `TELEGRAM_CHAT_ID` | for real delivery only | Send your bot any message, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and read `result[].message.chat.id`. (Or message [@userinfobot](https://t.me/userinfobot) for your own id.) |
+| `TELEGRAM_CHAT_ID` | for real delivery only | Send your bot any message, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and read `result[].message.chat.id`. (Or message [@userinfobot](https://t.me/userinfobot) for your own id.) Becomes recipient `me`. |
+| `TELEGRAM_RECIPIENTS` | optional | Extra named recipients for `--to`, e.g. `me:111,amigo:222`. Adds to / overrides `TELEGRAM_CHAT_ID`. |
 | `EUTILS_EMAIL` | recommended | Your email. NCBI etiquette: every request should identify itself. |
 | `NCBI_API_KEY` | optional | [NCBI account](https://www.ncbi.nlm.nih.gov/account/) → Settings → API Key Management. Raises the rate limit from 3 to 10 requests/second. |
 

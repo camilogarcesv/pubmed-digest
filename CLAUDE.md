@@ -14,7 +14,15 @@ pnpm build                                            # tsc emit to dist/
 
 pnpm dev:digest -- --dry-run --limit 5                # run digest, print only, no delivery/state write
 pnpm dev:search "glioma MRI" -- --dry-run --limit 5   # run ad-hoc search, print only
+
+# Cheap test iteration (avoid paying for scoring on every test):
+pnpm dev:digest -- --limit 5 --dry-run --save-cache   # build .cache/digest.json once (fetch+score)
+pnpm dev:digest -- --from-cache --to me,amigo         # replay from cache (no network), pick recipients
+pnpm dev:digest -- --rescore --dry-run --save-cache   # re-score cached papers (skips PubMed)
 ```
+
+`--from-cache` and `--rescore` never write `state.json`. `--to` picks recipients (default: only
+`me`); `--dry-run` delivers to nobody.
 
 Note the `--` before CLI flags in `dev:digest`/`dev:search` — required so pnpm forwards them to
 the script rather than consuming them itself. `--dry-run` still hits the real PubMed and Anthropic
@@ -67,6 +75,12 @@ both: **esearch (PubMed) → efetch (PubMed) → score (Anthropic) → render �
   seen, is never billed twice); `search` does neither. `config.markSeenMode` controls whether
   state records only delivered papers or every paper considered — "considered" is the default so
   below-threshold papers aren't re-fetched and re-scored (and re-billed) on the next run.
+
+- **`src/cache.ts`** + **`src/recipients.ts`** support cheap test iteration. `index.ts` has three
+  paths: normal (fetch+score), `--from-cache` (replay stored scores; no network), and `--rescore`
+  (reuse stored papers, re-score). The two replay paths never write `state.json`. `MultiDeliverer`
+  (in `deliver.ts`) fans delivery out to the recipients `--to` selects, attempting all and
+  aggregating failures so one bad chat id doesn't block the others.
 
 ### Testing
 
