@@ -1,0 +1,32 @@
+name: CI
+
+# Runs typecheck + tests on every PR and on pushes to main. This is the status
+# check that branch protection on `main` should require (job name: "check").
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version comes from the "packageManager" field in package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # pnpm 11 (pinned via packageManager) requires Node >= 22.13
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test

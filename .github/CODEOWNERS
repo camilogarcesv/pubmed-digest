@@ -1,0 +1,3 @@
+# Default owner for everything in the repo. With branch protection's
+# "require a pull request before merging", every PR requests this owner's review.
+* @camilogarcesv
