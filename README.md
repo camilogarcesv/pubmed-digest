@@ -30,7 +30,7 @@ hallucinated PMIDs are dropped), so a paper is never silently lost.
 
 ## Setup
 
-Requires Node.js LTS (>= 18.17) and [pnpm](https://pnpm.io).
+Requires Node.js LTS >= 22.13 (required by pnpm 11) and [pnpm](https://pnpm.io).
 
 ```bash
 pnpm install
