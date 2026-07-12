@@ -4,6 +4,9 @@ dist/
 *.log
 .DS_Store
 
+# Local test-run cache (--save-cache); never meant to be shared.
+/.cache/
+
 # Local run state is developer-specific; the GitHub Action commits its own copy.
 # See README (State & dedupe) for the trade-off.
 /state.json

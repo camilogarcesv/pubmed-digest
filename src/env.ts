@@ -9,6 +9,8 @@ const EnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
   TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
   TELEGRAM_CHAT_ID: z.string().min(1).optional(),
+  // Named recipients, e.g. "me:11111111,amigo:22222222". Adds to / overrides TELEGRAM_CHAT_ID.
+  TELEGRAM_RECIPIENTS: z.string().min(1).optional(),
   NCBI_API_KEY: z.string().min(1).optional(),
   EUTILS_EMAIL: z.string().email("EUTILS_EMAIL must be a valid email").optional(),
 });
