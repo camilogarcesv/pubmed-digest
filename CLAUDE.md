@@ -92,7 +92,9 @@ reconcile-on-missing-PMID retry actually fires) without any network access.
 
 ### CI
 
-`.github/workflows/digest.yml` runs `digest` on a weekly cron and commits the updated
-`state.json` back to the repo (state.json is gitignored for local dev but force-added in CI —
-see the workflow's commit step). Secrets (`ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`,
-`TELEGRAM_CHAT_ID`, `NCBI_API_KEY`, `EUTILS_EMAIL`) are GitHub Actions repo secrets.
+`.github/workflows/digest.yml` runs `digest` on a weekly cron. The seen-PMIDs ledger is restored
+from and persisted to an orphan single-file `state` branch via git plumbing (`hash-object` /
+`mktree` / `commit-tree`) — it can never live on `main`, whose branch protection rejects the bot's
+direct pushes. On failure the workflow sends a Telegram notification with the run URL. Secrets
+(`ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `NCBI_API_KEY`, `EUTILS_EMAIL`)
+are GitHub Actions repo secrets. `ci.yml` runs typecheck + tests on every PR and push to main.

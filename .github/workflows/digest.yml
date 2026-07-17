@@ -7,7 +7,7 @@ on:
     - cron: "0 12 * * 1"
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
-# Needed so the job can commit the updated state.json back to the repo.
+# contents: write is needed to push the state ledger to the (unprotected) 'state' branch.
 permissions:
   contents: write
 
@@ -19,16 +19,31 @@ jobs:
   digest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4 # version comes from the "packageManager" field in package.json
+      - uses: pnpm/action-setup@v6 # version comes from the "packageManager" field in package.json
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22 # pnpm 11 (pinned via packageManager) requires Node >= 22.13
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # The seen-PMIDs ledger lives on an orphan, single-file 'state' branch (à la gh-pages).
+      # It cannot live on main: branch protection rejects the bot's direct pushes there.
+      - name: Restore state from the state branch
+        run: |
+          if git fetch origin +refs/heads/state:refs/remotes/origin/state 2>/dev/null; then
+            if git show refs/remotes/origin/state:state.json > state.json 2>/dev/null; then
+              echo "State restored ($(wc -c < state.json) bytes)."
+            else
+              echo "state branch exists but has no state.json; starting fresh."
+              rm -f state.json
+            fi
+          else
+            echo "No state branch yet — first run."
+          fi
 
       - name: Run digest
         env:
@@ -39,16 +54,44 @@ jobs:
           EUTILS_EMAIL: ${{ secrets.EUTILS_EMAIL }}
         run: pnpm dev:digest
 
-      - name: Commit updated state
+      # Plumbing commands (hash-object/mktree/commit-tree): no branch switching, works whether
+      # or not the branch exists, first commit is parentless (orphan), and main stays untouched.
+      - name: Persist state to the state branch
         run: |
-          # state.json is gitignored (see .gitignore) so local runs don't dirty the repo,
-          # so force-add it here. Once committed it becomes tracked and -f is a no-op.
-          git add -f state.json 2>/dev/null || true
-          if git diff --cached --quiet -- state.json; then
-            echo "No state changes to commit."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "chore: update digest state [skip ci]"
-            git push
+          if [[ ! -f state.json ]]; then
+            echo "No state.json produced; nothing to persist."
+            exit 0
           fi
+          git fetch origin +refs/heads/state:refs/remotes/origin/state 2>/dev/null || true
+          PARENT=$(git rev-parse -q --verify refs/remotes/origin/state || true)
+          BLOB=$(git hash-object -w state.json)
+          OLD=""
+          if [[ -n "$PARENT" ]]; then
+            OLD=$(git rev-parse -q --verify "${PARENT}:state.json" || true)
+          fi
+          if [[ "$BLOB" == "$OLD" ]]; then
+            echo "State unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          TREE=$(printf '100644 blob %s\tstate.json\n' "$BLOB" | git mktree)
+          COMMIT=$(git commit-tree "$TREE" ${PARENT:+-p "$PARENT"} -m "chore: update digest state")
+          git push origin "${COMMIT}:refs/heads/state"
+          echo "State persisted (${COMMIT})."
+
+      # A silent week should mean "nothing failed", not "crashed unnoticed".
+      - name: Notify failure via Telegram
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
+            echo "Telegram secrets not configured; skipping failure notification."
+            exit 0
+          fi
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode text="⚠️ El digest semanal de PubMed FALLÓ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            || echo "Could not send the failure notification."
