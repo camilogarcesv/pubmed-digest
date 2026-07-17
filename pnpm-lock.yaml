@@ -12,8 +12,8 @@ importers:
         specifier: 0.68.0
         version: 0.68.0(zod@3.24.1)
       dotenv:
-        specifier: 16.4.7
-        version: 16.4.7
+        specifier: 17.4.2
+        version: 17.4.2
       fast-xml-parser:
         specifier: 5.9.3
         version: 5.9.3
@@ -671,8 +671,8 @@ packages:
     resolution: {integrity: sha512-h5k/5U50IJJFpzfL6nO9jaaumfjO/f2NjK/oYB2Djzm4p9L+3T9qWpZqZ2hAbLPuuYq9wrU08WQyBTL5GbPk5Q==}
     engines: {node: '>=6'}
 
-  dotenv@16.4.7:
-    resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
+  dotenv@17.4.2:
+    resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
     engines: {node: '>=12'}
 
   es-module-lexer@1.7.0:
@@ -1278,7 +1278,7 @@ snapshots:
 
   deep-eql@5.0.2: {}
 
-  dotenv@16.4.7: {}
+  dotenv@17.4.2: {}
 
   es-module-lexer@1.7.0: {}
 

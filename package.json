@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.68.0",
-    "dotenv": "16.4.7",
+    "dotenv": "17.4.2",
     "fast-xml-parser": "5.9.3",
     "yaml": "2.9.0",
     "zod": "3.24.1"
