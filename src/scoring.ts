@@ -104,8 +104,9 @@ export function buildSystemPrompt(profile: Profile, topic?: string): string {
       "La razón debe ser UNA sola frase corta en ESPAÑOL. " +
       'Si un artículo no tiene resumen (solo título), puntúalo con lo disponible e indícalo con "(sin resumen)".',
   );
-  // COST: the system prompt (profile + rubric) is identical across batches — a natural prompt-caching
-  // prefix, and batches are a natural Batch API workload. Neither is implemented in this MVP.
+  // COST: the digest is async-tolerant, so the Batch API (-50%) is a real future option if
+  // volume grows. Prompt caching is NOT: claude-haiku-4-5's minimum cacheable prefix is 4096
+  // tokens and this system prompt is far below that — a cache_control marker would silently no-op.
   return lines.join("\n");
 }
 

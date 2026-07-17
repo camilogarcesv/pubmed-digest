@@ -17,6 +17,11 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # vitest 4 currently resolves an incompatible vite and crashes at startup
+      # (verified locally, 2026-07). Re-evaluate the major once the ecosystem settles.
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
 
   # Keep the GitHub Actions in .github/workflows current (checkout, setup-node, etc.).
   - package-ecosystem: "github-actions"
