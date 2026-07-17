@@ -1,5 +1,7 @@
 // Delivery behind a thin interface so Telegram can be swapped later.
 
+import { logger } from "./logger.js";
+
 export interface Deliverer {
   send(text: string): Promise<void>;
 }
@@ -36,6 +38,34 @@ export class TelegramDeliverer implements Deliverer {
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(`Telegram sendMessage failed: HTTP ${res.status} ${body}`.trim());
+    }
+  }
+}
+
+/**
+ * Fans a message out to several named deliverers. Attempts every recipient even if one
+ * fails (so a bad friend chat id never blocks delivery to you), logs each result, and
+ * throws an aggregated error at the end if any failed.
+ */
+export class MultiDeliverer implements Deliverer {
+  constructor(private readonly targets: { name: string; deliverer: Deliverer }[]) {}
+
+  async send(text: string): Promise<void> {
+    const failures: string[] = [];
+    for (const { name, deliverer } of this.targets) {
+      try {
+        await deliverer.send(text);
+        logger.info("delivered", { recipient: name });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error("delivery failed", { recipient: name, error: message });
+        failures.push(`${name}: ${message}`);
+      }
+    }
+    if (failures.length > 0) {
+      throw new Error(
+        `Delivery failed for ${failures.length} recipient(s):\n  ${failures.join("\n  ")}`,
+      );
     }
   }
 }
