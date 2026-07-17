@@ -16,15 +16,15 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.68.0",
+    "@anthropic-ai/sdk": "0.112.1",
     "dotenv": "16.4.7",
-    "fast-xml-parser": "5.9.3",
+    "fast-xml-parser": "5.10.1",
     "yaml": "2.9.0",
     "zod": "3.24.1"
   },
   "devDependencies": {
     "@types/node": "22.10.5",
-    "tsx": "4.19.2",
+    "tsx": "4.23.1",
     "typescript": "7.0.2",
     "vitest": "3.2.7"
   }
