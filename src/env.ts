@@ -1,5 +1,12 @@
-import "dotenv/config";
+import { existsSync } from "node:fs";
 import { z } from "zod";
+
+// Load .env natively (Node >= 22, which engines already requires). This replaces the
+// dotenv dependency: dotenv v17 prints a banner to stdout, which would pollute the
+// digest output that --dry-run prints there. Like dotenv, existing env vars win.
+if (existsSync(".env")) {
+  process.loadEnvFile(".env");
+}
 
 // Secrets come ONLY from the environment (loaded from .env locally via dotenv).
 // ANTHROPIC_API_KEY is required for every command because scoring always runs,
