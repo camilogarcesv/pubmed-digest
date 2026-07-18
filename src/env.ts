@@ -8,18 +8,33 @@ if (existsSync(".env")) {
   process.loadEnvFile(".env");
 }
 
-// Secrets come ONLY from the environment (loaded from .env locally via dotenv).
-// ANTHROPIC_API_KEY is required for every command because scoring always runs,
-// even under --dry-run. Telegram credentials are validated lazily, only when a
-// real delivery is attempted (see makeTelegram in index.ts).
+// GitHub Actions substitutes an unconfigured secret with an empty string, not an
+// absent variable (`${{ secrets.X }}` evaluates to "" when X doesn't exist), so an
+// optional secret that was never set as a repo secret still arrives here as "" rather
+// than undefined. Treat "" as "not set" before validating, or z.optional() would
+// reject it as an invalid value instead of treating it as absent. Locally this never
+// shows up: an unset key is simply missing from .env (truly undefined), not "".
+const emptyToUndefined = (val: unknown) => (val === "" ? undefined : val);
+const optionalNonEmpty = () => z.preprocess(emptyToUndefined, z.string().min(1).optional());
+
+// Secrets come ONLY from the environment (loaded from .env locally, or GitHub Actions
+// repository secrets in CI). ANTHROPIC_API_KEY is required for every command because
+// scoring always runs, even under --dry-run. Telegram credentials are validated lazily,
+// only when a real delivery is attempted (see makeDeliverer in index.ts).
 const EnvSchema = z.object({
-  ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
-  TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
-  TELEGRAM_CHAT_ID: z.string().min(1).optional(),
+  ANTHROPIC_API_KEY: z.preprocess(
+    emptyToUndefined,
+    z.string().min(1, "ANTHROPIC_API_KEY is required"),
+  ),
+  TELEGRAM_BOT_TOKEN: optionalNonEmpty(),
+  TELEGRAM_CHAT_ID: optionalNonEmpty(),
   // Named recipients, e.g. "me:11111111,amigo:22222222". Adds to / overrides TELEGRAM_CHAT_ID.
-  TELEGRAM_RECIPIENTS: z.string().min(1).optional(),
-  NCBI_API_KEY: z.string().min(1).optional(),
-  EUTILS_EMAIL: z.string().email("EUTILS_EMAIL must be a valid email").optional(),
+  TELEGRAM_RECIPIENTS: optionalNonEmpty(),
+  NCBI_API_KEY: optionalNonEmpty(),
+  EUTILS_EMAIL: z.preprocess(
+    emptyToUndefined,
+    z.string().email("EUTILS_EMAIL must be a valid email").optional(),
+  ),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

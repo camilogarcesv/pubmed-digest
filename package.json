@@ -16,8 +16,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.111.0",
-    "fast-xml-parser": "5.10.0",
+    "@anthropic-ai/sdk": "0.112.1",
+    "fast-xml-parser": "5.10.1",
     "yaml": "2.9.0",
     "zod": "4.4.3"
   },
