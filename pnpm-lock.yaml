@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: 0.112.1
-        version: 0.112.1(zod@4.4.3)
+        specifier: 0.112.4
+        version: 0.112.4(zod@4.4.3)
       fast-xml-parser:
         specifier: 5.10.1
         version: 5.10.1
@@ -36,8 +36,8 @@ importers:
 
 packages:
 
-  '@anthropic-ai/sdk@0.112.1':
-    resolution: {integrity: sha512-vPRhHWxG9gIDyI9anVET2tBkmMBOXyTpIFvQgUVveiAV0ihmQgBYzQHb/s9+pZ/FxprSWcQnj15YnRfPxOIEmg==}
+  '@anthropic-ai/sdk@0.112.4':
+    resolution: {integrity: sha512-7eXJJnrmBI5GMC6drrCiSkycVsT7crRZX3qv5HusLSm+qiILjmtqP7gf+UiT7ASu/7Gdj+Zfl4f2haV8wATKUg==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -921,7 +921,7 @@ packages:
 
 snapshots:
 
-  '@anthropic-ai/sdk@0.112.1(zod@4.4.3)':
+  '@anthropic-ai/sdk@0.112.4(zod@4.4.3)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
