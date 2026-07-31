@@ -12,10 +12,11 @@ interfaces so they can be swapped later.
 
 ## How it works
 
-- **`digest`** — for every configured journal/topic, fetch records **newly added to PubMed** in
-  the last N days (`datetype=edat`), de-duplicate PMIDs across sources, skip anything already in
-  `state.json`, score the rest against `profile.yaml`, keep papers scoring `>= threshold`, render
-  a ranked digest, deliver via Telegram, and record what was handled.
+- **`digest`** — for every journal and standing query in `profile.yaml`, fetch records **newly
+  added to PubMed** in the last N days (`datetype=edat`), de-duplicate PMIDs across sources, skip
+  anything already in `state.json`, drop editorial noise and duplicate DOIs, score the rest
+  against the profile, re-rank the finalists, select what to send, deliver via Telegram, and
+  record what was handled.
 - **`search "<topic>"`** — fetch recent records for an ad-hoc query and score them with the
   **topic as the primary criterion** (the profile is only a tiebreaker), then show the top-N
   ranked results. No dedupe, no state.
@@ -25,6 +26,18 @@ interfaces so they can be swapped later.
 Scoring uses a **forced tool call** (`submit_scores`) on `claude-haiku-4-5`. The tool output is
 validated with zod and reconciled against the batch that was sent (omitted PMIDs are re-scored;
 hallucinated PMIDs are dropped), so a paper is never silently lost.
+
+**Two passes, not one.** After the batch scoring, the best `rerankTopK` papers are re-scored
+together in a single call. An absolute 0–10 score drifts between batches; comparing the finalists
+against each other fixes the ordering for the price of one extra call.
+
+**No week is empty or overwhelming.** Selection applies the threshold with a cap (`maxDelivered`)
+and a floor (`minDelivered`): on a quiet week the digest tops up with near misses, clearly labeled
+as below the bar.
+
+**Every message carries its own receipt** — a footer with how many papers were new, scored and
+delivered, and what the run cost. Silence on a Monday therefore means something is broken, never
+"nothing was relevant".
 
 ---
 
@@ -37,8 +50,9 @@ pnpm install
 cp .env.example .env      # then fill in the values (see Tokens below)
 ```
 
-Edit `profile.yaml` (the main tuning knob) and, if you like, `src/config.ts` (journals, topics,
-threshold, lookback, caps).
+Edit `profile.yaml` — it holds both **what counts as relevant** and **what gets searched**
+(followed journals + standing queries). `src/config.ts` keeps only operator knobs (model, batch
+sizes, caps, excluded publication types, pricing).
 
 **Always run a dry run first** — it hits PubMed and Anthropic for real but delivers nothing:
 
@@ -101,14 +115,23 @@ All secrets come from the environment (`.env` locally; repository secrets in CI)
 
 ## Editing the interest profile
 
-`profile.yaml` **is** the definition of relevance. Fields:
+`profile.yaml` **is** the definition of relevance, and it also defines coverage. Fields:
 
 - `description` — free text describing the reader's focus.
 - `topics`, `must_have`, `nice_to_have`, `exclude` — lists that shape scoring.
 - `exemplar_papers` — a few titles/PMIDs the reader loved (used as style references).
+- `sources.journals` — journals followed, by PubMed ISO abbreviation (`AJNR Am J Neuroradiol`).
+- `sources.queries` — standing PubMed queries run every week. **These are what catch the excellent
+  paper published outside the followed journals** (Lancet Neurology, NEJM, JAMA…). A plain phrase
+  becomes `("word"[tiab] AND …)`; anything containing a field tag or AND/OR/NOT passes through.
+- `threshold` — optional per-profile override of `config.threshold`.
 
 It's seeded with a neuroradiology-leaning example. Rewrite it for the actual reader — that's where
 the quality comes from. It's validated at startup, so a malformed file fails fast with a clear error.
+
+> Widening `sources` widens cost roughly proportionally: each source adds papers to score.
+> `maxAbstractsPerRun` is the hard ceiling, and the run footer tells you what each week actually
+> cost, so you can tune with real numbers instead of guessing.
 
 ---
 
@@ -117,6 +140,14 @@ the quality comes from. It's validated at startup, so a malformed file fails fas
 `.github/workflows/digest.yml` runs `digest` on a weekly cron (Mondays 12:00 UTC;
 `workflow_dispatch` lets you trigger it manually). Add the same variables above as **repository
 secrets** (Settings → Secrets and variables → Actions).
+
+**Two guardrails, learned the hard way.** A failure alert now includes the tail of the run log,
+not just the run URL — a bare URL is not enough to know what broke. And
+`.github/workflows/canary.yml` runs the same code path every **Saturday** with
+`--dry-run --limit 3`: real APIs and real secrets, no delivery, no state written. CI is fully
+offline, so it cannot catch a break that only appears with live credentials; the canary can, two
+days before the digest that would otherwise be lost. Each run also writes a metrics table to the
+Actions **job summary**.
 
 **State persistence: an orphan `state` branch.** After each run the workflow commits the updated
 `state.json` to a dedicated single-file `state` branch (à la `gh-pages`) using git plumbing —
@@ -161,8 +192,14 @@ that, so a `cache_control` marker would silently no-op.
 
 ```
 src/
-  config.ts    profile.ts   env.ts     types.ts   logger.ts   util.ts
-  pubmed.ts    scoring.ts    state.ts   deliver.ts digest.ts   index.ts
+  index.ts     CLI wiring only (flags -> dependencies -> pipeline)
+  pipeline.ts  orchestration: search -> fetch -> prefilter -> score -> re-rank -> deliver
+  pubmed.ts    E-utilities client + XML parsing      scoring.ts  Anthropic forced tool call
+  filter.ts    pre-scoring filters (type, DOI)       digest.ts   selection + HTML rendering
+  metrics.ts   run counters, tokens, cost            deliver.ts  Telegram / console / fan-out
+  state.ts     seen-PMIDs ledger                     recipients.ts  --to name resolution
+  cache.ts     run snapshots for cheap replay        profile.ts  + config.ts, env.ts, types.ts,
+                                                     logger.ts, util.ts
 tests/         fixtures + unit tests (offline)
-profile.yaml   interest profile (edit me)
+profile.yaml   interest profile AND coverage (edit me)
 ```

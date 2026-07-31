@@ -41,3 +41,28 @@ exemplar_papers:
     pmid: "36762865"
   - title: "DWI-FLAIR mismatch to guide thrombolysis in wake-up stroke"
     pmid: "29766770"
+
+# Qué se busca cada semana. La cobertura es decisión del lector, por eso vive aquí
+# y no en src/config.ts.
+sources:
+  # Revistas seguidas (abreviatura ISO de PubMed — es la forma más segura de acotar).
+  journals:
+    - AJNR Am J Neuroradiol
+    - Clin Neuroradiol
+    - Interv Neuroradiol
+    - Neuroradiology
+    - J Neurointerv Surg
+    - Stroke
+    - Radiology
+    - Eur Radiol
+    - Emerg Radiol
+
+  # Búsquedas permanentes: capturan el paper excelente publicado FUERA de esas revistas
+  # (Lancet Neurology, NEJM, JAMA...). Se ejecutan en cada digest con la misma ventana.
+  queries:
+    - '("thrombectomy"[tiab] AND "stroke"[tiab])'
+    - '("large vessel occlusion"[tiab] OR "basilar occlusion"[tiab])'
+    - '("intracranial aneurysm"[tiab] AND ("coiling"[tiab] OR "flow diverter"[tiab]))'
+    - '("intracerebral hemorrhage"[tiab] AND "imaging"[tiab])'
+    - '("glioma"[tiab] AND ("MRI"[tiab] OR "perfusion"[tiab]))'
+    - '("deep learning"[tiab] AND "neuroimaging"[tiab])'

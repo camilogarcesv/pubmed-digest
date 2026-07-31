@@ -16,6 +16,16 @@ export interface Paper {
   pubDate: string;
   /** Which configured journal/topic surfaced this paper (for logging only). */
   source: string;
+  /** Digital Object Identifier, when the record carries one. Used for links and de-duplication. */
+  doi?: string;
+  /** NLM publication types, e.g. ["Randomized Controlled Trial", "Journal Article"]. */
+  publicationTypes: string[];
+  /** MeSH descriptor names. Empty for records PubMed has not indexed yet (most fresh ones). */
+  meshTerms: string[];
+  /** Author-supplied keywords. */
+  keywords: string[];
+  /** e.g. "aheadofprint", "ppublish", "epublish". */
+  publicationStatus?: string;
 }
 
 export interface ScoredPaper extends Paper {

@@ -28,6 +28,18 @@ export function topicTerm(topic: string): string {
 
 // -------------------- XML parsing (pure, unit-tested) --------------------
 
+const ARRAY_TAGS = new Set([
+  "PubmedArticle",
+  "Author",
+  "AbstractText",
+  "PublicationType",
+  "MeshHeading",
+  "KeywordList",
+  "Keyword",
+  "ArticleId",
+  "ELocationID",
+]);
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
@@ -40,7 +52,7 @@ const parser = new XMLParser({
   // Decode named HTML entities (e.g. &alpha;); numeric refs (&#xed;) are handled in decodeEntities.
   htmlEntities: true,
   // Force these paths to always be arrays so we never branch on single-vs-array.
-  isArray: (name) => name === "PubmedArticle" || name === "Author" || name === "AbstractText",
+  isArray: (name) => ARRAY_TAGS.has(name),
 });
 
 /**
@@ -116,6 +128,77 @@ function extractAuthors(authorList: unknown): Author[] {
   return out;
 }
 
+/** Text of every child under a list node, e.g. PublicationTypeList -> PublicationType. */
+function extractList(listNode: unknown, childTag: string): string[] {
+  if (!listNode || typeof listNode !== "object") return [];
+  const children = (listNode as Record<string, unknown>)[childTag];
+  if (!Array.isArray(children)) return [];
+  const out: string[] = [];
+  for (const c of children) {
+    const text = collectText(c).trim();
+    if (text) out.push(text);
+  }
+  return out;
+}
+
+/** MeSH descriptor names. MeshHeading wraps a DescriptorName plus optional QualifierNames. */
+function extractMeshTerms(citation: Record<string, unknown>): string[] {
+  const list = citation.MeshHeadingList as Record<string, unknown> | undefined;
+  if (!list) return [];
+  const headings = list.MeshHeading;
+  if (!Array.isArray(headings)) return [];
+  const out: string[] = [];
+  for (const h of headings) {
+    if (!h || typeof h !== "object") continue;
+    const name = collectText((h as Record<string, unknown>).DescriptorName).trim();
+    if (name) out.push(name);
+  }
+  return out;
+}
+
+/** Author keywords. A record can carry several KeywordList blocks (one per owner). */
+function extractKeywords(citation: Record<string, unknown>): string[] {
+  const lists = citation.KeywordList;
+  if (!Array.isArray(lists)) return [];
+  const out: string[] = [];
+  for (const list of lists) out.push(...extractList(list, "Keyword"));
+  return out;
+}
+
+/**
+ * DOI, preferring PubmedData/ArticleIdList (authoritative) and falling back to the
+ * Article's ELocationID. Normalized to lowercase so it can be used as a dedupe key.
+ */
+function extractDoi(article: Record<string, unknown>, pubmedData: unknown): string | undefined {
+  if (pubmedData && typeof pubmedData === "object") {
+    const idList = (pubmedData as Record<string, unknown>).ArticleIdList as
+      | Record<string, unknown>
+      | undefined;
+    const ids = idList?.ArticleId;
+    if (Array.isArray(ids)) {
+      for (const id of ids) {
+        if (!id || typeof id !== "object") continue;
+        const o = id as Record<string, unknown>;
+        if (String(o["@_IdType"] ?? "").toLowerCase() !== "doi") continue;
+        const value = collectText(o).trim();
+        if (value) return value.toLowerCase();
+      }
+    }
+  }
+
+  const eLocations = article.ELocationID;
+  if (Array.isArray(eLocations)) {
+    for (const el of eLocations) {
+      if (!el || typeof el !== "object") continue;
+      const o = el as Record<string, unknown>;
+      if (String(o["@_EIdType"] ?? "").toLowerCase() !== "doi") continue;
+      const value = collectText(o).trim();
+      if (value) return value.toLowerCase();
+    }
+  }
+  return undefined;
+}
+
 function extractPubDate(article: Record<string, unknown>): string {
   const journal = article.Journal as Record<string, unknown> | undefined;
   const issue = journal?.JournalIssue as Record<string, unknown> | undefined;
@@ -140,11 +223,12 @@ function extractPubDate(article: Record<string, unknown>): string {
 
 function mapArticle(node: unknown): Paper | null {
   if (!node || typeof node !== "object") return null;
-  const citation = (node as Record<string, unknown>).MedlineCitation as
-    | Record<string, unknown>
-    | undefined;
+  const root = node as Record<string, unknown>;
+  const citation = root.MedlineCitation as Record<string, unknown> | undefined;
   const article = citation?.Article as Record<string, unknown> | undefined;
   if (!citation || !article) return null;
+  // PubmedData is a sibling of MedlineCitation and carries the DOI and publication status.
+  const pubmedData = root.PubmedData as Record<string, unknown> | undefined;
 
   const pmid = collectText(citation.PMID).trim();
   if (!pmid) return null;
@@ -159,8 +243,23 @@ function mapArticle(node: unknown): Paper | null {
     collectText(journalNode?.ISOAbbreviation).trim() ||
     "(revista desconocida)";
   const pubDate = extractPubDate(article);
+  const publicationStatus = collectText(pubmedData?.PublicationStatus).trim() || undefined;
 
-  return { pmid, title, abstract, hasAbstract, authors, journal, pubDate, source: "" };
+  return {
+    pmid,
+    title,
+    abstract,
+    hasAbstract,
+    authors,
+    journal,
+    pubDate,
+    source: "",
+    doi: extractDoi(article, pubmedData),
+    publicationTypes: extractList(article.PublicationTypeList, "PublicationType"),
+    meshTerms: extractMeshTerms(citation),
+    keywords: extractKeywords(citation),
+    publicationStatus,
+  };
 }
 
 /** Parse an efetch XML document into Paper records. */
@@ -197,12 +296,20 @@ export interface PubMedClientOptions {
   minIntervalMs?: number;
   maxRetries?: number;
   fetchImpl?: typeof fetch;
+  /** Delay before retry N. Injectable so tests can exercise the retry paths without waiting. */
+  backoffMsImpl?: (attempt: number) => number;
 }
 
 export interface ESearchOptions {
   reldate: number;
   retmax?: number;
   datetype?: string;
+}
+
+export interface ESearchResult {
+  ids: string[];
+  /** Total matches PubMed reports. Greater than ids.length means the result set was truncated. */
+  count: number;
 }
 
 function backoffMs(attempt: number): number {
@@ -217,6 +324,7 @@ export class PubMedClient {
   private readonly minIntervalMs: number;
   private readonly maxRetries: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly backoffMs: (attempt: number) => number;
   private lastRequestAt = 0;
 
   constructor(opts: PubMedClientOptions = {}) {
@@ -226,6 +334,7 @@ export class PubMedClient {
     this.minIntervalMs = opts.minIntervalMs ?? (opts.apiKey ? 120 : 350);
     this.maxRetries = opts.maxRetries ?? 4;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.backoffMs = opts.backoffMsImpl ?? backoffMs;
   }
 
   private commonParams(): Record<string, string> {
@@ -250,7 +359,7 @@ export class PubMedClient {
         res = await this.fetchImpl(url);
       } catch (err) {
         if (attempt >= this.maxRetries) throw err;
-        const delay = backoffMs(attempt);
+        const delay = this.backoffMs(attempt);
         logger.warn("eutils network error, retrying", { attempt, delay, error: String(err) });
         await sleep(delay);
         attempt++;
@@ -263,7 +372,9 @@ export class PubMedClient {
         }
         const retryAfter = Number(res.headers.get("retry-after"));
         const delay =
-          Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : backoffMs(attempt);
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? retryAfter * 1000
+            : this.backoffMs(attempt);
         logger.warn("eutils throttled/5xx, backing off", { status: res.status, attempt, delay });
         await sleep(delay);
         attempt++;
@@ -275,8 +386,8 @@ export class PubMedClient {
     }
   }
 
-  /** Run esearch and return the list of PMIDs. */
-  async esearch(term: string, opts: ESearchOptions): Promise<string[]> {
+  /** Run esearch and return the PMIDs plus the total match count. */
+  async esearch(term: string, opts: ESearchOptions): Promise<ESearchResult> {
     const params = new URLSearchParams({
       db: "pubmed",
       term,
@@ -298,7 +409,9 @@ export class PubMedClient {
         `PubMed esearch error for term "${term}": ${parsed.data.esearchresult.ERROR}`,
       );
     }
-    return parsed.data.esearchresult.idlist;
+    const ids = parsed.data.esearchresult.idlist;
+    const reported = Number(parsed.data.esearchresult.count);
+    return { ids, count: Number.isFinite(reported) ? reported : ids.length };
   }
 
   /** Run efetch for a set of PMIDs and return parsed Paper records. */

@@ -45,6 +45,8 @@ jobs:
             echo "No state branch yet — first run."
           fi
 
+      # The log is kept so the failure notification can carry the actual error instead of just
+      # a URL. PIPESTATUS preserves the CLI's exit code through the pipe to tee.
       - name: Run digest
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -52,7 +54,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           EUTILS_EMAIL: ${{ secrets.EUTILS_EMAIL }}
-        run: pnpm dev:digest
+        run: |
+          pnpm dev:digest 2>&1 | tee /tmp/digest.log
+          exit "${PIPESTATUS[0]}"
 
       # Plumbing commands (hash-object/mktree/commit-tree): no branch switching, works whether
       # or not the branch exists, first commit is parentless (orphan), and main stays untouched.
@@ -80,18 +84,26 @@ jobs:
           git push origin "${COMMIT}:refs/heads/state"
           echo "State persisted (${COMMIT})."
 
-      # A silent week should mean "nothing failed", not "crashed unnoticed".
+      # A silent week should mean "nothing failed", not "crashed unnoticed". The alert carries
+      # the tail of the log: a URL alone told us nothing and cost days of guessing. Only the
+      # last lines are sent, and src/logger.ts never prints secrets.
       - name: Notify failure via Telegram
         if: failure()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
             echo "Telegram secrets not configured; skipping failure notification."
             exit 0
           fi
+          DETAIL="(sin log: el fallo ocurrió antes de ejecutar el digest)"
+          if [[ -s /tmp/digest.log ]]; then
+            DETAIL=$(tail -c 600 /tmp/digest.log)
+          fi
+          TEXT=$(printf '⚠️ El digest semanal de PubMed FALLÓ.\n\n%s\n\n%s' "$DETAIL" "$RUN_URL")
           curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode chat_id="${TELEGRAM_CHAT_ID}" \
-            --data-urlencode text="⚠️ El digest semanal de PubMed FALLÓ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --data-urlencode text="$TEXT" \
             || echo "Could not send the failure notification."

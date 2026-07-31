@@ -3,38 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadCache, saveCache, type CacheSnapshot } from "../src/cache.js";
+import { makePaper, makeScored } from "./helpers.js";
 
 const snap: CacheSnapshot = {
   version: 1,
   command: "digest",
   createdAt: "2026-07-12T00:00:00Z",
   model: "claude-haiku-4-5",
-  papers: [
-    {
-      pmid: "1",
-      title: "t",
-      abstract: "",
-      hasAbstract: false,
-      authors: [{ lastName: "Doe", foreName: "Jane" }],
-      journal: "J",
-      pubDate: "2026",
-      source: "",
-    },
-  ],
-  scored: [
-    {
-      pmid: "1",
-      title: "t",
-      abstract: "",
-      hasAbstract: false,
-      authors: [{ lastName: "Doe", foreName: "Jane" }],
-      journal: "J",
-      pubDate: "2026",
-      source: "",
-      relevance: 8,
-      reason: "r",
-    },
-  ],
+  papers: [makePaper("1")],
+  scored: [makeScored("1", 8)],
 };
 
 describe("cache", () => {
@@ -70,5 +47,38 @@ describe("cache", () => {
     const bad = join(dir, "bad2.json");
     writeFileSync(bad, JSON.stringify({ version: 2 }));
     await expect(loadCache(bad)).rejects.toThrow(/validation/);
+  });
+
+  // Caches written before the metadata fields existed must keep loading, or a --from-cache
+  // replay would start failing the day the schema grows.
+  it("loads a snapshot written before the metadata fields existed", async () => {
+    const path = join(dir, "legacy.json");
+    const legacyPaper = {
+      pmid: "1",
+      title: "t",
+      abstract: "",
+      hasAbstract: false,
+      authors: [],
+      journal: "J",
+      pubDate: "2026",
+      source: "",
+    };
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        command: "digest",
+        createdAt: "2026-07-12T00:00:00Z",
+        model: "claude-haiku-4-5",
+        papers: [legacyPaper],
+        scored: [{ ...legacyPaper, relevance: 8, reason: "r" }],
+      }),
+    );
+
+    const loaded = await loadCache(path);
+
+    expect(loaded.papers[0]!.publicationTypes).toEqual([]);
+    expect(loaded.papers[0]!.meshTerms).toEqual([]);
+    expect(loaded.scored[0]!.doi).toBeUndefined();
   });
 });

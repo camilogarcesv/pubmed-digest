@@ -1,0 +1,65 @@
+name: Saturday canary
+
+# The Monday digest is the only thing that exercises the real APIs and the real secrets, so a
+# break introduced during the week (a dependency bump, an expired key, a PubMed change) is
+# discovered when the digest is already lost. This runs the same code path two days earlier,
+# cheaply: a handful of papers, no delivery, no state written. If it fails you have the weekend.
+
+on:
+  schedule:
+    - cron: "0 12 * * 6" # Saturdays 12:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pubmed-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6 # version comes from the "packageManager" field in package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # --dry-run prints instead of delivering and never writes state.json, so the canary can
+      # never consume papers the Monday digest should have sent.
+      - name: Smoke-run the digest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          EUTILS_EMAIL: ${{ secrets.EUTILS_EMAIL }}
+        run: |
+          pnpm dev:digest -- --dry-run --limit 3 2>&1 | tee /tmp/canary.log
+          exit "${PIPESTATUS[0]}"
+
+      - name: Notify failure via Telegram
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
+            echo "Telegram secrets not configured; skipping failure notification."
+            exit 0
+          fi
+          DETAIL="(sin log: el fallo ocurrió antes de ejecutar el digest)"
+          if [[ -s /tmp/canary.log ]]; then
+            DETAIL=$(tail -c 600 /tmp/canary.log)
+          fi
+          TEXT=$(printf '🐤 El canario del sábado FALLÓ — el digest del lunes se romperá.\n\n%s\n\n%s' "$DETAIL" "$RUN_URL")
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode text="$TEXT" \
+            || echo "Could not send the failure notification."
