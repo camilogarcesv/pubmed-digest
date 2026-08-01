@@ -8,6 +8,7 @@ import { JsonFileStore } from "./state.js";
 import { ConsoleDeliverer, MultiDeliverer, TelegramDeliverer, type Deliverer } from "./deliver.js";
 import { parseRecipients, selectRecipients } from "./recipients.js";
 import { loadCache, saveCache, type CacheSnapshot } from "./cache.js";
+import { fetchVotes } from "./votes.js";
 import { RunMetrics, writeStepSummary } from "./metrics.js";
 import {
   deliverDigest,
@@ -141,9 +142,19 @@ async function runDigest(flags: CommonFlags): Promise<void> {
     }
 
     // --- Normal path ---
-    const store = new JsonFileStore(STATE_PATH);
+    const store = new JsonFileStore(STATE_PATH, config.statePruneDays);
     await store.load();
     logger.info("loaded state", { seen: store.size() });
+
+    // Votes are enrichment, never a dependency: if the Worker is down the digest still runs.
+    if (env.VOTES_URL && env.VOTES_READ_SECRET) {
+      try {
+        deps.votes = await fetchVotes(env.VOTES_URL, env.VOTES_READ_SECRET);
+        logger.info("votes fetched", { count: deps.votes.length });
+      } catch (err) {
+        logger.warn("could not fetch votes, continuing without", { error: String(err) });
+      }
+    }
 
     const { papers, scored } = await runDigestPipeline(deps, {
       title,

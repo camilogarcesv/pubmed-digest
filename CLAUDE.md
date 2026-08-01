@@ -6,8 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 pnpm install                                        # install deps
-pnpm typecheck                                       # tsc --noEmit
+pnpm typecheck                                       # tsc --noEmit (src + tests)
+pnpm typecheck:worker                                 # tsc for worker/ (Workers runtime types)
 pnpm test                                             # vitest run (offline, no network)
+pnpm eval -- --votes dump.json                        # measure the ranking against 👍/👎 votes
 pnpm exec vitest run tests/pubmed.test.ts             # run a single test file
 pnpm exec vitest run -t "reconciles"                  # run tests matching a name pattern
 pnpm build                                            # tsc emit to dist/
@@ -62,9 +64,13 @@ The pipeline: **esearch → efetch → prefilter → score → re-rank → selec
 | `src/metrics.ts` | Run counters, token usage, estimated cost, job summary |
 | `src/cache.ts` | Run snapshots for `--save-cache` / `--from-cache` / `--rescore` |
 | `src/recipients.ts` | Named-recipient registry and `--to` selection |
+| `src/feedback.ts` | Vote callback format and keyboards — shared by the digest AND the Worker |
+| `src/votes.ts` | Reading votes, dynamic exemplars, eval metrics |
+| `src/eval.ts` | The `pnpm eval` report |
 | `src/types.ts` | `Paper` / `ScoredPaper` / `Author` — the shared data shapes |
 | `src/logger.ts` | Tiny JSON logger, stderr only |
 | `src/util.ts` | `chunk`, `sleep`, `stripArgSeparator` |
+| `worker/worker.ts` | Cloudflare Worker: Telegram webhook + KV storage + `/votes` endpoint |
 
 - **`src/pubmed.ts`** — E-utilities client (`PubMedClient`). Uses `datetype=edat` +
   `reldate=lookbackDays` (not `pdat`/mindate/maxdate) so "new" means "newly indexed by PubMed,"
@@ -116,13 +122,32 @@ The pipeline: **esearch → efetch → prefilter → score → re-rank → selec
   string rather than omitting the variable, and a bare `.optional()` rejects that as invalid
   instead of treating it as absent. That was a real production break — see `tests/env.test.ts`.
 
+- **The feedback loop** — `src/feedback.ts` owns the `v:<pmid>:<0|1>` callback format and the
+  keyboards. It is imported by *both* `src/digest.ts` (which builds the buttons) and
+  `worker/worker.ts` (which parses the presses), which is the only thing stopping the two sides
+  from drifting apart; it therefore must stay free of Workers-runtime types so it compiles under
+  both tsconfigs. The Worker stores one KV entry per `(chat, paper)` so a re-vote overwrites, and
+  exposes them at `GET /votes` behind a bearer token. `src/votes.ts` reads that endpoint, joins
+  votes to the ledger (votes carry only a PMID — the title and score come from `state.json`), and
+  produces both the **dynamic exemplars** fed to `buildSystemPrompt` and the **eval metrics**.
+  Votes are always enrichment, never a dependency: if the Worker is down the digest still runs.
+
 - **`src/state.ts`** / **`src/deliver.ts`** — both define a narrow interface
   (`SeenStore`, `Deliverer`) with the real implementation used at runtime
   (`JsonFileStore`/`TelegramDeliverer`) and a throwaway one used for `--dry-run` or tests
   (`MemoryStore`/`ConsoleDeliverer`). Swap the concrete class in `index.ts` if a different backend
-  is ever needed — nothing else in the pipeline should need to change. `TelegramDeliverer` splits
-  messages at Telegram's 4096-char limit on newline boundaries, which also guarantees no chunk
-  ends inside an HTML tag.
+  is ever needed — nothing else in the pipeline should need to change.
+
+  A digest is a **sequence** of messages (`Deliverer.send(OutMessage[])`), not one blob: Telegram
+  anchors an inline keyboard to a single message, so per-paper voting requires per-paper messages.
+  `TelegramDeliverer` paces them (~1 msg/s per chat is Telegram's sustained limit), puts a
+  message's keyboard on its last chunk, and splits at Telegram's 4096-char limit on newline
+  boundaries, which also guarantees no chunk ends inside an HTML tag.
+
+  The ledger is **v2**: `{pmid: {firstSeen, title, relevance?, delivered}}`. The bare-PMID v1
+  format is migrated on load (inheriting the file's `updatedAt` so pruning sees the true age).
+  The extra metadata is not decoration — a vote carries only a PMID, so without the stored title
+  neither eval nor the dynamic exemplars could name the paper.
 
 - **`src/pipeline.ts`** orchestrates: `digest` de-dupes PMIDs across all sources *and* against
   `state.json` before scoring anything (so a paper matching two sources, or already seen, is never

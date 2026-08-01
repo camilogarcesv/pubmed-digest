@@ -58,11 +58,18 @@ export interface ScoreContext {
   topic?: string;
   /** Second pass over the finalists only — see AnthropicScorer.rerank. */
   rerank?: boolean;
+  /**
+   * Titles from the reader's recent 👍/👎 votes, injected as few-shot signal. The static
+   * exemplars in profile.yaml say what the reader *thinks* they like; these say what they
+   * actually voted for — voting improves the next digest without editing anything.
+   */
+  exemplars?: { liked: string[]; disliked: string[] };
 }
 
 const NEUTRAL_REASON = "No evaluado por el modelo.";
 
-export function buildSystemPrompt(profile: Profile, topic?: string, rerank = false): string {
+export function buildSystemPrompt(ctx: ScoreContext): string {
+  const { profile, topic, rerank } = ctx;
   const lines: string[] = [];
   lines.push(
     "Eres un asistente experto que evalúa la relevancia de artículos científicos de PubMed para un radiólogo.",
@@ -99,6 +106,19 @@ export function buildSystemPrompt(profile: Profile, topic?: string, rerank = fal
       `Ejemplos de artículos que le encantaron: ${profile.exemplar_papers
         .map((e) => e.title)
         .join("; ")}.`,
+    );
+  }
+  // Dynamic exemplars: what the reader actually voted, strictly fresher signal than the
+  // hand-written profile. Liked titles calibrate the top of the scale; disliked ones mark
+  // the kind of paper that LOOKS relevant here but wasn't.
+  if (ctx.exemplars?.liked.length) {
+    lines.push(
+      `VOTADOS 👍 recientemente (más de esto): ${ctx.exemplars.liked.join("; ")}.`,
+    );
+  }
+  if (ctx.exemplars?.disliked.length) {
+    lines.push(
+      `VOTADOS 👎 recientemente (penaliza artículos parecidos a estos): ${ctx.exemplars.disliked.join("; ")}.`,
     );
   }
   lines.push("");
@@ -264,7 +284,7 @@ export class AnthropicScorer implements Scorer {
     const body: Anthropic.MessageCreateParamsNonStreaming = {
       model: this.model,
       max_tokens: 4096,
-      system: buildSystemPrompt(ctx.profile, ctx.topic, ctx.rerank),
+      system: buildSystemPrompt(ctx),
       tools: [submitScoresTool],
       tool_choice: { type: "tool", name: SCORE_TOOL_NAME },
       messages: [{ role: "user", content: buildUserMessage(batch) }],

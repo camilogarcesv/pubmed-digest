@@ -31,6 +31,9 @@ const EnvSchema = z.object({
   // Named recipients, e.g. "me:11111111,amigo:22222222". Adds to / overrides TELEGRAM_CHAT_ID.
   TELEGRAM_RECIPIENTS: optionalNonEmpty(),
   NCBI_API_KEY: optionalNonEmpty(),
+  // Cloudflare Worker vote feedback (see worker/). Unset => the feature is silently off.
+  VOTES_URL: optionalNonEmpty(),
+  VOTES_READ_SECRET: optionalNonEmpty(),
   EUTILS_EMAIL: z.preprocess(
     emptyToUndefined,
     z.string().email("EUTILS_EMAIL must be a valid email").optional(),

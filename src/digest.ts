@@ -1,9 +1,17 @@
 import type { ScoredPaper } from "./types.js";
+import type { OutMessage } from "./deliver.js";
+import { voteKeyboard } from "./feedback.js";
 
 export interface RenderOptions {
   title: string;
   /** Optional one-line run summary appended at the end (counts and estimated cost). */
   footer?: string;
+  /**
+   * Attach a 👍/👎 inline keyboard to every paper. On for the digest (votes feed the eval and
+   * the dynamic exemplars); off for search, whose topic-primary scores aren't comparable with
+   * the profile's and would pollute the vote signal.
+   */
+  withKeyboards?: boolean;
 }
 
 export interface SelectOptions {
@@ -43,33 +51,44 @@ export function selectForDigest(papers: ScoredPaper[], opts: SelectOptions): Sel
 }
 
 /**
- * Render the digest as Telegram HTML. HTML (not MarkdownV2) because it only requires escaping
- * three characters — MarkdownV2 needs 18 escaped anywhere in the text, and paper titles are
- * full of exactly that punctuation.
+ * Render the digest as a sequence of Telegram-HTML messages: a header, one message per paper
+ * (each carrying its own 👍/👎 keyboard — Telegram anchors an inline keyboard to a single
+ * message, which is why the digest is not one big blob), an optional near-miss section, and a
+ * footer with the run receipt. HTML (not MarkdownV2) because it only requires escaping three
+ * characters — MarkdownV2 needs 18 escaped anywhere, and paper titles are full of exactly
+ * that punctuation.
  */
-export function renderDigest(
+export function renderDigestMessages(
   papers: ScoredPaper[],
   opts: RenderOptions,
   nearMisses: ScoredPaper[] = [],
-): string {
-  const sections: string[] = [`<b>${escapeHtml(opts.title)}</b>`];
+): OutMessage[] {
+  const header = `<b>${escapeHtml(opts.title)}</b>`;
 
   if (papers.length === 0 && nearMisses.length === 0) {
-    sections.push("No hay artículos que superen el umbral esta vez.");
-  } else {
-    if (papers.length > 0) {
-      sections.push([...papers].sort(byRelevance).map(renderItem).join("\n\n"));
-    }
-    if (nearMisses.length > 0) {
-      sections.push(
-        `<i>Cerca del umbral (semana floja):</i>\n\n` +
-          [...nearMisses].sort(byRelevance).map(renderItem).join("\n\n"),
-      );
-    }
+    const parts = [header, "No hay artículos que superen el umbral esta vez."];
+    if (opts.footer) parts.push(`<i>${escapeHtml(opts.footer)}</i>`);
+    return [{ text: parts.join("\n\n") }];
   }
 
-  if (opts.footer) sections.push(`<i>${escapeHtml(opts.footer)}</i>`);
-  return sections.join("\n\n");
+  const messages: OutMessage[] = [{ text: header }];
+  for (const p of [...papers].sort(byRelevance)) messages.push(paperMessage(p, opts));
+
+  if (nearMisses.length > 0) {
+    messages.push({ text: "<i>Cerca del umbral (semana floja):</i>" });
+    // Near-miss votes are extra-valuable signal: they say exactly where the bar sits wrong.
+    for (const p of [...nearMisses].sort(byRelevance)) messages.push(paperMessage(p, opts));
+  }
+
+  if (opts.footer) messages.push({ text: `<i>${escapeHtml(opts.footer)}</i>` });
+  return messages;
+}
+
+function paperMessage(p: ScoredPaper, opts: RenderOptions): OutMessage {
+  return {
+    text: renderItem(p),
+    keyboard: opts.withKeyboards ? voteKeyboard(p.pmid) : undefined,
+  };
 }
 
 function byRelevance(a: ScoredPaper, b: ScoredPaper): number {

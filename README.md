@@ -39,6 +39,11 @@ as below the bar.
 delivered, and what the run cost. Silence on a Monday therefore means something is broken, never
 "nothing was relevant".
 
+**The digest learns from 👍/👎.** Each paper arrives as its own Telegram message with a vote
+keyboard. A Cloudflare Worker records the presses; the next digest feeds the recent likes and
+dislikes back into the scoring prompt, and `pnpm eval` measures whether the ranking actually
+agrees with the reader. See [Vote feedback](#vote-feedback-and-pnpm-eval).
+
 ---
 
 ## Setup
@@ -109,6 +114,8 @@ All secrets come from the environment (`.env` locally; repository secrets in CI)
 | `TELEGRAM_CHAT_ID` | for real delivery only | Send your bot any message, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and read `result[].message.chat.id`. (Or message [@userinfobot](https://t.me/userinfobot) for your own id.) Becomes recipient `me`. |
 | `TELEGRAM_RECIPIENTS` | optional | Extra named recipients for `--to`, e.g. `me:111,amigo:222`. Adds to / overrides `TELEGRAM_CHAT_ID`. |
 | `EUTILS_EMAIL` | recommended | Your email. NCBI etiquette: every request should identify itself. |
+| `VOTES_URL` | optional | Your Cloudflare Worker's `/votes` endpoint. Enables dynamic exemplars and `pnpm eval` without `--votes`. |
+| `VOTES_READ_SECRET` | optional | Bearer token guarding that endpoint; must match the Worker's secret. |
 | `NCBI_API_KEY` | optional | [NCBI account](https://www.ncbi.nlm.nih.gov/account/) → Settings → API Key Management. Raises the rate limit from 3 to 10 requests/second. |
 
 ---
@@ -166,10 +173,69 @@ Because the Action uses `pnpm install --frozen-lockfile`, **commit `pnpm-lock.ya
 
 ---
 
+## Vote feedback and `pnpm eval`
+
+Each paper is delivered as its own Telegram message with a 👍/👎 keyboard. Telegram discards
+unread button presses after ~24h, so a small **Cloudflare Worker** (`worker/`) sits on a webhook,
+acknowledges the press instantly and stores the vote in Workers KV. Everything below is optional:
+without `VOTES_URL` the digest behaves exactly as it did before.
+
+The votes do two things:
+
+- **They tune the next digest automatically.** The most recent likes and dislikes are injected
+  into the scoring prompt as few-shot exemplars — what the reader *actually* voted for beats what
+  the profile *says* they want. Titles come from the ledger, so this costs no extra requests.
+- **They make tuning measurable.** `pnpm eval` reports precision@k, the average score of liked vs
+  disliked papers, and the **disagreements** — liked papers the model scored low, disliked ones it
+  scored high. That list is the to-do for `profile.yaml`.
+
+```bash
+pnpm eval                          # votes from the Worker, scores from the ledger + cache
+pnpm eval -- --votes dump.json     # offline, from a saved {"votes":[...]} dump
+pnpm eval -- --rescore             # re-score the voted papers with the CURRENT profile and
+                                   # compare metrics before/after — the tuning loop
+```
+
+### Deploying the Worker (one time, free tier)
+
+```bash
+cd worker
+npx wrangler login
+npx wrangler kv namespace create VOTES     # paste the printed id into wrangler.toml
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET   # any long random string
+npx wrangler secret put VOTES_READ_SECRET         # another long random string
+npx wrangler deploy                        # prints your Worker URL
+```
+
+Then point Telegram at it (the `secret_token` must equal `TELEGRAM_WEBHOOK_SECRET` — it is how
+the Worker knows a request really came from Telegram):
+
+```bash
+curl -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook" \
+  -d "url=https://<your-worker>.workers.dev/webhook" \
+  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+```
+
+Finally add `VOTES_URL` (`https://<your-worker>.workers.dev/votes`) and `VOTES_READ_SECRET` to
+your `.env` and to the repository secrets.
+
+> **Why a Worker and not a poller?** A scheduled job reading `getUpdates` would leave the button
+> spinning until the next poll and would silently lose any vote older than 24h. The Worker also
+> becomes the first piece of the multi-user backend rather than throwaway scaffolding.
+
+---
+
 ## State & dedupe
 
-`state.json` is the set of PMIDs the digest has already handled. Locally it's a gitignored file at
-the repo root; in CI it is restored from and persisted to the orphan `state` branch (see above).
+`state.json` is the ledger of papers the digest has already handled. Locally it's a gitignored file
+at the repo root; in CI it is restored from and persisted to the orphan `state` branch (see above).
+Each entry keeps the title, the score and whether it was delivered — votes only carry a PMID, so
+the ledger is what lets `pnpm eval` and the dynamic exemplars resolve one to a paper without
+re-fetching PubMed. Entries older than `config.statePruneDays` (180) are dropped on save; the
+`edat` window is 8 days, so nothing that old can reappear. A v1 ledger (a bare PMID list) is
+migrated automatically on first load.
+
 By default (`config.markSeenMode: "considered"`) it records **every paper evaluated in a run**, not
 only the delivered ones — so papers that scored below threshold aren't re-fetched and **re-billed**
 every week. Set it to `"delivered"` for strict "only what was sent" semantics. `search` never
@@ -199,7 +265,9 @@ src/
   metrics.ts   run counters, tokens, cost            deliver.ts  Telegram / console / fan-out
   state.ts     seen-PMIDs ledger                     recipients.ts  --to name resolution
   cache.ts     run snapshots for cheap replay        profile.ts  + config.ts, env.ts, types.ts,
-                                                     logger.ts, util.ts
+  feedback.ts  vote callback format + keyboards      logger.ts, util.ts
+  votes.ts     read votes, exemplars, eval metrics   eval.ts     the `pnpm eval` report
+worker/        Cloudflare Worker: vote webhook + KV + /votes endpoint
 tests/         fixtures + unit tests (offline)
 profile.yaml   interest profile AND coverage (edit me)
 ```

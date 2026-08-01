@@ -43,6 +43,14 @@ export interface AppConfig {
   /** Anthropic price per 1M tokens, for the estimated cost in the run summary. */
   pricing: { inputPerMTok: number; outputPerMTok: number };
   /**
+   * Max 👍 titles (and, separately, 👎 titles) injected into the scoring prompt as dynamic
+   * exemplars. Recent votes only — the join goes through the ledger, which is pruned.
+   */
+  dynamicExemplarsMax: number;
+  /** Ledger entries older than this are pruned on save. The edat window is 8 days, so nothing
+   * older than ~30 can reappear; 180 keeps months of vote-joinable history. */
+  statePruneDays: number;
+  /**
    * Which PMIDs the digest records in state.json:
    *  - "considered": every paper evaluated this run (so below-threshold papers aren't re-scored,
    *    and re-billed, every week). Recommended for cost control.
@@ -74,5 +82,7 @@ export const config: AppConfig = {
   maxDelivered: 12,
   minDelivered: 3,
   pricing: { inputPerMTok: 1.0, outputPerMTok: 5.0 },
+  dynamicExemplarsMax: 5,
+  statePruneDays: 180,
   markSeenMode: "considered",
 };

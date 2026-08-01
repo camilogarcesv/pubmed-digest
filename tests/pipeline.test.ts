@@ -5,15 +5,20 @@ import { config, type AppConfig } from "../src/config.js";
 import { runDigestPipeline, type PaperFetcher, type PipelineDeps } from "../src/pipeline.js";
 import { RunMetrics } from "../src/metrics.js";
 import { MemoryStore } from "../src/state.js";
-import type { Deliverer } from "../src/deliver.js";
+import type { Deliverer, OutMessage } from "../src/deliver.js";
 import type { Scorer, ScoreContext, ScorerUsage } from "../src/scoring.js";
 import type { Paper, ScoredPaper } from "../src/types.js";
 import { makePaper, makeProfile } from "./helpers.js";
 
 class CapturingDeliverer implements Deliverer {
-  readonly sent: string[] = [];
-  async send(text: string): Promise<void> {
-    this.sent.push(text);
+  /** One entry per send() call; each call is the full message sequence. */
+  readonly sent: OutMessage[][] = [];
+  async send(messages: OutMessage[]): Promise<void> {
+    this.sent.push(messages);
+  }
+  /** All text of the first delivery, for content assertions. */
+  get firstText(): string {
+    return (this.sent[0] ?? []).map((m) => m.text).join("\n\n");
   }
 }
 
@@ -21,14 +26,17 @@ class CapturingDeliverer implements Deliverer {
 class FakeScorer implements Scorer {
   readonly usage: ScorerUsage = { calls: 0, inputTokens: 100, outputTokens: 20 };
   rerankCalls = 0;
+  lastCtx?: ScoreContext;
 
-  async score(papers: Paper[]): Promise<ScoredPaper[]> {
+  async score(papers: Paper[], ctx: ScoreContext): Promise<ScoredPaper[]> {
     this.usage.calls++;
+    this.lastCtx = ctx;
     return papers.map((p, i) => ({ ...p, relevance: Math.max(0, 10 - i), reason: `r${p.pmid}` }));
   }
-  async rerank(papers: ScoredPaper[], _ctx: ScoreContext): Promise<ScoredPaper[]> {
+  async rerank(papers: ScoredPaper[], ctx: ScoreContext): Promise<ScoredPaper[]> {
     this.rerankCalls++;
     this.usage.calls++;
+    this.lastCtx = ctx;
     return papers;
   }
 }
@@ -78,7 +86,7 @@ describe("runDigestPipeline", () => {
 
     expect(scored.map((p) => p.pmid)).toEqual(["1", "2"]);
     expect(deps.deliverer.sent).toHaveLength(1);
-    expect(deps.deliverer.sent[0]).toContain("Título 1");
+    expect(deps.deliverer.firstText).toContain("Título 1");
     expect(store.size()).toBe(2); // markSeenMode "considered"
   });
 
@@ -105,7 +113,7 @@ describe("runDigestPipeline", () => {
 
     expect(deps.metrics.sourcesOk).toBe(1);
     expect(deps.metrics.sourcesFailed).toBe(1);
-    expect(deps.deliverer.sent[0]).toContain("1 fuentes fallaron"); // surfaced in the footer
+    expect(deps.deliverer.firstText).toContain("1 fuentes fallaron"); // surfaced in the footer
   });
 
   // Silence must always mean "broken", never "nothing new".
@@ -115,17 +123,56 @@ describe("runDigestPipeline", () => {
     await runDigestPipeline(deps, { ...OPTS, store: new MemoryStore() });
 
     expect(deps.deliverer.sent).toHaveLength(1);
-    expect(deps.deliverer.sent[0]).toContain("No hay artículos");
+    expect(deps.deliverer.firstText).toContain("No hay artículos");
   });
 
   it("skips PMIDs already in the ledger", async () => {
     const deps = makeDeps();
     const store = new MemoryStore();
-    store.add(["1"]);
+    store.record([{ pmid: "1", title: "t", firstSeen: "2026-07-01T00:00:00Z", delivered: false }]);
 
     const { scored } = await runDigestPipeline(deps, { ...OPTS, store });
 
     expect(scored.map((p) => p.pmid)).toEqual(["2"]);
+  });
+
+  it("records score, title and delivery flag in the ledger", async () => {
+    const deps = makeDeps();
+    const store = new MemoryStore();
+
+    await runDigestPipeline(deps, { ...OPTS, store });
+
+    // FakeScorer gives paper "1" a 10 (>= threshold 7) and "2" a 9 — both delivered.
+    expect(store.get("1")).toMatchObject({ title: "Título 1", relevance: 10, delivered: true });
+    expect(store.get("2")).toMatchObject({ relevance: 9, delivered: true });
+  });
+
+  it("turns votes into dynamic exemplars via the ledger, newest vote wins", async () => {
+    const deps = makeDeps();
+    const store = new MemoryStore();
+    store.record([
+      { pmid: "900", title: "Título votado 👍", firstSeen: "2026-07-20T00:00:00Z", delivered: true },
+      { pmid: "901", title: "Título votado 👎", firstSeen: "2026-07-20T00:00:00Z", delivered: true },
+    ]);
+    deps.votes = [
+      { pmid: "900", value: 0, chatId: "1", votedAt: "2026-07-21T00:00:00Z" },
+      { pmid: "900", value: 1, chatId: "1", votedAt: "2026-07-22T00:00:00Z" }, // re-vote wins
+      { pmid: "901", value: 0, chatId: "1", votedAt: "2026-07-21T00:00:00Z" },
+      { pmid: "999", value: 1, chatId: "1", votedAt: "2026-07-21T00:00:00Z" }, // not in ledger
+    ];
+
+    await runDigestPipeline(deps, { ...OPTS, store });
+
+    expect(deps.scorer.lastCtx?.exemplars).toEqual({
+      liked: ["Título votado 👍"],
+      disliked: ["Título votado 👎"],
+    });
+  });
+
+  it("scores without exemplars when there are no votes", async () => {
+    const deps = makeDeps();
+    await runDigestPipeline(deps, { ...OPTS, store: new MemoryStore() });
+    expect(deps.scorer.lastCtx?.exemplars).toBeUndefined();
   });
 
   it("drops excluded publication types and duplicate DOIs before scoring", async () => {
