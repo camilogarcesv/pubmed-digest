@@ -54,6 +54,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           EUTILS_EMAIL: ${{ secrets.EUTILS_EMAIL }}
+          # Optional: recent 👍/👎 votes become few-shot exemplars. Unset => feature off.
+          VOTES_URL: ${{ secrets.VOTES_URL }}
+          VOTES_READ_SECRET: ${{ secrets.VOTES_READ_SECRET }}
         run: |
           pnpm dev:digest 2>&1 | tee /tmp/digest.log
           exit "${PIPESTATUS[0]}"

@@ -3,6 +3,9 @@
 allowBuilds:
   esbuild: true
 
+minimumReleaseAgeExclude:
+  - '@cloudflare/workers-types@5.20260801.1'
+
 # vitest 3.2.7 accepts vite ^5 || ^6 || ^7 but resolves to vite 5, which carries five known
 # advisories (vite path traversal + fs.deny bypass, and postcss/esbuild transitively). Forcing
 # vite 6 clears all of them without the vitest 4 major, which is pinned back in dependabot.yml

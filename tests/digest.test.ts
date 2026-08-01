@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { escapeHtml, renderDigest, selectForDigest } from "../src/digest.js";
+import { escapeHtml, renderDigestMessages, selectForDigest } from "../src/digest.js";
 import { splitForTelegram } from "../src/deliver.js";
+import { voteKeyboard } from "../src/feedback.js";
 import { makeScored as scored } from "./helpers.js";
 
 describe("selectForDigest", () => {
@@ -28,52 +29,70 @@ describe("selectForDigest", () => {
   });
 });
 
-describe("renderDigest", () => {
-  it("renders a ranked HTML digest with PubMed and DOI links", () => {
-    const text = renderDigest([scored("111", 8), scored("222", 10, { doi: "10.1/xyz" })], {
-      title: "Test",
-    });
-    expect(text.startsWith("<b>Test</b>")).toBe(true);
-    // 222 (10) should rank above 111 (8)
-    expect(text.indexOf("222")).toBeLessThan(text.indexOf("111"));
-    expect(text).toContain('<a href="https://pubmed.ncbi.nlm.nih.gov/222/">PubMed</a>');
-    expect(text).toContain('<a href="https://doi.org/10.1/xyz">DOI</a>');
-    expect(text).toContain("🔥 10/10"); // 9+ gets the hot badge
-    expect(text).toContain("⭐ 8/10");
-    expect(text).toContain("Doe Jane"); // single author, no "et al."
+describe("renderDigestMessages", () => {
+  it("emits header, one message per paper ranked descending, and a footer", () => {
+    const messages = renderDigestMessages(
+      [scored("111", 8), scored("222", 10, { doi: "10.1/xyz" })],
+      { title: "Test", footer: "— 5 nuevos · ~$0.01" },
+    );
+
+    expect(messages).toHaveLength(4); // header + 2 papers + footer
+    expect(messages[0]!.text).toBe("<b>Test</b>");
+    // 222 (10) ranks above 111 (8)
+    expect(messages[1]!.text).toContain("🔥 10/10");
+    expect(messages[1]!.text).toContain('<a href="https://doi.org/10.1/xyz">DOI</a>');
+    expect(messages[2]!.text).toContain("⭐ 8/10");
+    expect(messages[2]!.text).toContain('<a href="https://pubmed.ncbi.nlm.nih.gov/111/">PubMed</a>');
+    expect(messages[3]!.text).toBe("<i>— 5 nuevos · ~$0.01</i>");
+    expect(messages[1]!.text).toContain("Doe Jane"); // single author, no "et al."
+  });
+
+  it("attaches a vote keyboard per paper only when withKeyboards is set", () => {
+    const withK = renderDigestMessages([scored("111", 8)], { title: "T", withKeyboards: true });
+    expect(withK[1]!.keyboard).toEqual(voteKeyboard("111"));
+    expect(withK[0]!.keyboard).toBeUndefined(); // never on the header
+
+    const without = renderDigestMessages([scored("111", 8)], { title: "T" }); // search mode
+    expect(without[1]!.keyboard).toBeUndefined();
   });
 
   it("escapes HTML in titles and reasons so Telegram can parse the message", () => {
-    const text = renderDigest(
+    const [, paper] = renderDigestMessages(
       [scored("1", 9, { title: "R&D of <flow diverters>", reason: "a > b & c" })],
       { title: "T" },
     );
-    expect(text).toContain("R&amp;D of &lt;flow diverters&gt;");
-    expect(text).toContain("a &gt; b &amp; c");
-    expect(text).not.toContain("<flow");
+    expect(paper!.text).toContain("R&amp;D of &lt;flow diverters&gt;");
+    expect(paper!.text).toContain("a &gt; b &amp; c");
+    expect(paper!.text).not.toContain("<flow");
   });
 
   it("labels the study type when the publication types say something useful", () => {
-    const text = renderDigest(
+    const [, paper] = renderDigestMessages(
       [scored("1", 9, { publicationTypes: ["Journal Article", "Randomized Controlled Trial"] })],
       { title: "T" },
     );
-    expect(text).toContain("Ensayo aleatorizado");
+    expect(paper!.text).toContain("Ensayo aleatorizado");
   });
 
-  it("shows near misses in their own labeled section", () => {
-    const text = renderDigest([scored("1", 8)], { title: "T" }, [scored("2", 6)]);
-    expect(text).toContain("Cerca del umbral");
-    expect(text.indexOf("Cerca del umbral")).toBeGreaterThan(text.indexOf("Título 1"));
+  it("shows near misses after their own label, with keyboards too", () => {
+    const messages = renderDigestMessages([scored("1", 8)], { title: "T", withKeyboards: true }, [
+      scored("2", 6),
+    ]);
+    const texts = messages.map((m) => m.text);
+    const labelAt = texts.findIndex((t) => t.includes("Cerca del umbral"));
+    const keptAt = texts.findIndex((t) => t.includes("Título 1"));
+    const nearAt = texts.findIndex((t) => t.includes("Título 2"));
+    expect(keptAt).toBeLessThan(labelAt);
+    expect(labelAt).toBeLessThan(nearAt);
+    // near-miss votes are signal about where the bar sits: keyboard included
+    expect(messages[nearAt]!.keyboard).toEqual(voteKeyboard("2"));
   });
 
-  it("appends the run footer when given one", () => {
-    const text = renderDigest([scored("1", 8)], { title: "T", footer: "— 5 nuevos · ~$0.01" });
-    expect(text).toContain("<i>— 5 nuevos · ~$0.01</i>");
-  });
-
-  it("handles the empty case", () => {
-    expect(renderDigest([], { title: "Test" })).toContain("No hay artículos");
+  it("collapses the empty case into a single message", () => {
+    const messages = renderDigestMessages([], { title: "Test", footer: "— 0" });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.text).toContain("No hay artículos");
+    expect(messages[0]!.text).toContain("— 0");
   });
 });
 
@@ -104,12 +123,16 @@ describe("splitForTelegram", () => {
     expect(parts[0]!.length).toBe(4096);
   });
 
-  it("never splits a rendered digest inside an HTML tag", () => {
-    // 40 entries is well past the 4096 limit, so this really does split.
+  it("never splits rendered digest content inside an HTML tag", () => {
+    // 40 entries joined is well past the 4096 limit, so this really does split. Individual
+    // messages stay short in production; this guards the fallback path.
     const papers = Array.from({ length: 40 }, (_, i) =>
       scored(String(i), 8, { doi: `10.1000/paper-${i}` }),
     );
-    const parts = splitForTelegram(renderDigest(papers, { title: "Largo" }), 4096);
+    const joined = renderDigestMessages(papers, { title: "Largo" })
+      .map((m) => m.text)
+      .join("\n\n");
+    const parts = splitForTelegram(joined, 4096);
 
     expect(parts.length).toBeGreaterThan(1);
     for (const part of parts) {

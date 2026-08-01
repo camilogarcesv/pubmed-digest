@@ -10,7 +10,8 @@ import type { SeenStore } from "./state.js";
 import type { ESearchOptions, ESearchResult } from "./pubmed.js";
 import { journalTerm, topicTerm } from "./pubmed.js";
 import { dedupeByDoi, excludeByPublicationType } from "./filter.js";
-import { renderDigest, selectForDigest, type Selection } from "./digest.js";
+import { renderDigestMessages, selectForDigest, type Selection } from "./digest.js";
+import { dynamicExemplars, type Vote } from "./votes.js";
 import { RunMetrics } from "./metrics.js";
 import { logger } from "./logger.js";
 import { chunk } from "./util.js";
@@ -28,6 +29,8 @@ export interface PipelineDeps {
   scorer: Scorer;
   deliverer: Deliverer;
   metrics: RunMetrics;
+  /** Recent 👍/👎 votes from the Worker; undefined/empty leaves scoring exactly as before. */
+  votes?: Vote[];
 }
 
 export interface DigestOptions {
@@ -132,6 +135,7 @@ async function scoreAndRerank(
   deps: PipelineDeps,
   papers: Paper[],
   topic?: string,
+  exemplars?: { liked: string[]; disliked: string[] },
 ): Promise<ScoredPaper[]> {
   const { cfg, scorer, profile, metrics } = deps;
   const toScore = cfg.scoreWithoutAbstract ? papers : papers.filter((p) => p.hasAbstract);
@@ -139,10 +143,10 @@ async function scoreAndRerank(
     logger.info("dropped papers without abstract", { dropped: papers.length - toScore.length });
   }
 
-  const scored = await scorer.score(toScore, { profile, topic });
+  const scored = await scorer.score(toScore, { profile, topic, exemplars });
   metrics.scored += scored.length;
 
-  const refined = await rerankFinalists(deps, scored, topic);
+  const refined = await rerankFinalists(deps, scored, topic, exemplars);
   metrics.calls = scorer.usage.calls;
   metrics.inputTokens = scorer.usage.inputTokens;
   metrics.outputTokens = scorer.usage.outputTokens;
@@ -153,6 +157,7 @@ async function rerankFinalists(
   deps: PipelineDeps,
   scored: ScoredPaper[],
   topic?: string,
+  exemplars?: { liked: string[]; disliked: string[] },
 ): Promise<ScoredPaper[]> {
   const k = deps.cfg.rerankTopK;
   if (k <= 0 || scored.length < 2) return scored;
@@ -162,7 +167,7 @@ async function rerankFinalists(
   if (finalists.length < 2) return scored;
 
   logger.info("re-ranking finalists", { count: finalists.length });
-  const refined = await deps.scorer.rerank(finalists, { profile: deps.profile, topic });
+  const refined = await deps.scorer.rerank(finalists, { profile: deps.profile, topic, exemplars });
   const byPmid = new Map(refined.map((p) => [p.pmid, p]));
   return scored.map((p) => byPmid.get(p.pmid) ?? p);
 }
@@ -190,7 +195,9 @@ export async function deliverDigest(
   });
 
   const footer = metrics.telegramFooter(cfg.pricing);
-  await deliverer.send(renderDigest(selection.kept, { title, footer }, selection.nearMisses));
+  await deliverer.send(
+    renderDigestMessages(selection.kept, { title, footer, withKeyboards: true }, selection.nearMisses),
+  );
   return selection;
 }
 
@@ -232,7 +239,20 @@ export async function runDigestPipeline(
 
   const fetched = await fetchPapers(deps, newPmids, pmidToSource);
   const papers = prefilter(deps, fetched);
-  const scored = await scoreAndRerank(deps, papers);
+
+  // Recent votes become few-shot exemplars: the titles come from the ledger (votes only carry
+  // PMIDs), so this is a pure local join — no extra network or cost.
+  const exemplars = deps.votes?.length
+    ? dynamicExemplars(deps.votes, store, cfg.dynamicExemplarsMax)
+    : undefined;
+  if (exemplars) {
+    logger.info("dynamic exemplars from votes", {
+      liked: exemplars.liked.length,
+      disliked: exemplars.disliked.length,
+    });
+  }
+
+  const scored = await scoreAndRerank(deps, papers, undefined, exemplars);
 
   const selection = await deliverDigest(deps, scored, opts.title);
 
@@ -241,16 +261,25 @@ export async function runDigestPipeline(
     return { papers, scored };
   }
 
-  // Mark everything fetched, including papers the prefilter dropped, so they are never
-  // fetched again. Under "delivered" mode only what was actually sent is recorded.
-  const toMark =
-    cfg.markSeenMode === "delivered"
-      ? selection.kept.map((p) => p.pmid)
-      : fetched.map((p) => p.pmid);
-  store.add(toMark);
+  // Record everything fetched — including papers the prefilter dropped — so nothing is ever
+  // fetched (or billed) twice. Under "delivered" mode only what was actually sent is recorded.
+  const deliveredSet = new Set(selection.kept.map((p) => p.pmid));
+  const scoreByPmid = new Map(scored.map((p) => [p.pmid, p.relevance]));
+  const now = new Date().toISOString();
+  const toRecord = (cfg.markSeenMode === "delivered"
+    ? fetched.filter((p) => deliveredSet.has(p.pmid))
+    : fetched
+  ).map((p) => ({
+    pmid: p.pmid,
+    title: p.title,
+    firstSeen: now,
+    relevance: scoreByPmid.get(p.pmid),
+    delivered: deliveredSet.has(p.pmid),
+  }));
+  store.record(toRecord);
   await store.save();
   logger.info("digest delivered and state saved", {
-    marked: toMark.length,
+    marked: toRecord.length,
     seenTotal: store.size(),
   });
 
@@ -283,7 +312,7 @@ export async function runSearchPipeline(
   logger.info("search esearch", { found: ids.length, total: count });
 
   if (ids.length === 0) {
-    await deliverer.send(`<b>${opts.title}</b>\n\nSin resultados recientes.`);
+    await deliverer.send([{ text: `<b>${opts.title}</b>\n\nSin resultados recientes.` }]);
     return { papers: [], scored: [] };
   }
 
@@ -302,7 +331,11 @@ export async function runSearchPipeline(
   return { papers, scored };
 }
 
-/** Search shows the top-N ranked; the digest threshold does not apply here. */
+/**
+ * Search shows the top-N ranked; the digest threshold does not apply here, and neither do the
+ * vote keyboards — topic-primary scores aren't comparable with the profile's, so votes on
+ * search results would pollute the feedback signal.
+ */
 export async function deliverSearch(
   deps: PipelineDeps,
   scored: ScoredPaper[],
@@ -311,6 +344,8 @@ export async function deliverSearch(
   const { cfg, metrics, deliverer } = deps;
   const top = [...scored].sort((a, b) => b.relevance - a.relevance).slice(0, cfg.searchTopResults);
   metrics.delivered = top.length;
-  await deliverer.send(renderDigest(top, { title, footer: metrics.telegramFooter(cfg.pricing) }));
+  await deliverer.send(
+    renderDigestMessages(top, { title, footer: metrics.telegramFooter(cfg.pricing) }),
+  );
   logger.info("search delivered", { results: top.length });
 }
