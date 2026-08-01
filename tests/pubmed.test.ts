@@ -31,8 +31,8 @@ describe("parseArticles", () => {
   const papers = parseArticles(sampleXml);
 
   it("parses every article in the set", () => {
-    expect(papers).toHaveLength(2);
-    expect(papers.map((p) => p.pmid)).toEqual(["40123456", "40123457"]);
+    expect(papers).toHaveLength(3);
+    expect(papers.map((p) => p.pmid)).toEqual(["40123456", "40123457", "40123458"]);
   });
 
   it("joins labeled abstract sections keeping their labels", () => {
@@ -62,6 +62,29 @@ describe("parseArticles", () => {
     const p = papers[1]!;
     expect(p.hasAbstract).toBe(false);
     expect(p.abstract).toBe("");
+  });
+
+  it("extracts publication types, MeSH terms and keywords", () => {
+    const p = papers[0]!;
+    expect(p.publicationTypes).toEqual(["Randomized Controlled Trial", "Journal Article"]);
+    // Only the descriptor name — qualifiers ("therapy") are dropped.
+    expect(p.meshTerms).toEqual(["Stroke", "Thrombectomy"]);
+    expect(p.keywords).toEqual(["thrombectomy", "perfusion imaging"]);
+    expect(p.publicationStatus).toBe("ppublish");
+  });
+
+  it("extracts the DOI from ArticleIdList and falls back to ELocationID", () => {
+    expect(papers[0]!.doi).toBe("10.3174/ajnr.a1234"); // lowercased for dedupe
+    expect(papers[1]!.doi).toBe("10.1007/s00330-026-9999-1"); // only in ELocationID
+    expect(papers[1]!.publicationStatus).toBe("aheadofprint");
+  });
+
+  it("leaves metadata arrays empty when the record carries none", () => {
+    const p = papers[2]!;
+    expect(p.meshTerms).toEqual([]);
+    expect(p.keywords).toEqual([]);
+    expect(p.authors).toEqual([]);
+    expect(p.publicationTypes).toEqual(["Published Erratum"]);
   });
 });
 

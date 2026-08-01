@@ -10,6 +10,8 @@ const AuthorSchema = z.object({
   foreName: z.string().optional(),
 });
 
+// The metadata fields below were added after the first caches were written, so they all
+// default — an older snapshot still loads (with empty metadata) instead of failing validation.
 const PaperSchema = z.object({
   pmid: z.string(),
   title: z.string(),
@@ -19,6 +21,11 @@ const PaperSchema = z.object({
   journal: z.string(),
   pubDate: z.string(),
   source: z.string(),
+  doi: z.string().optional(),
+  publicationTypes: z.array(z.string()).default([]),
+  meshTerms: z.array(z.string()).default([]),
+  keywords: z.array(z.string()).default([]),
+  publicationStatus: z.string().optional(),
 });
 
 const ScoredPaperSchema = PaperSchema.extend({

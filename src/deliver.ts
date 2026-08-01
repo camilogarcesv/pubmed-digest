@@ -33,7 +33,12 @@ export class TelegramDeliverer implements Deliverer {
     const res = await this.fetchImpl(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: this.chatId, text, disable_web_page_preview: true }),
+      body: JSON.stringify({
+        chat_id: this.chatId,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -71,8 +76,11 @@ export class MultiDeliverer implements Deliverer {
 }
 
 /**
- * Split text into <= limit-char chunks, preferring to break on newlines so a
- * digest entry is never cut mid-line. A single over-long line is hard-split.
+ * Split text into <= limit-char chunks, breaking on newlines so a digest entry is never cut
+ * mid-line. Since renderDigest emits every HTML tag opened and closed within a single line,
+ * breaking only at newlines also guarantees no chunk ends inside a tag — which Telegram would
+ * reject with "can't parse entities". The hard-split below is an unreachable last resort kept
+ * for safety: renderDigest truncates titles and reasons so no single line approaches the limit.
  */
 export function splitForTelegram(text: string, limit = TELEGRAM_LIMIT): string[] {
   if (text.length <= limit) return [text];

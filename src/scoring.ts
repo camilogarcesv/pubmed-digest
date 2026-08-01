@@ -56,16 +56,26 @@ export interface ScoreContext {
   profile: Profile;
   /** Present in `search` mode: the topic becomes the primary relevance criterion. */
   topic?: string;
+  /** Second pass over the finalists only — see AnthropicScorer.rerank. */
+  rerank?: boolean;
 }
 
 const NEUTRAL_REASON = "No evaluado por el modelo.";
 
-export function buildSystemPrompt(profile: Profile, topic?: string): string {
+export function buildSystemPrompt(profile: Profile, topic?: string, rerank = false): string {
   const lines: string[] = [];
   lines.push(
     "Eres un asistente experto que evalúa la relevancia de artículos científicos de PubMed para un radiólogo.",
   );
   lines.push("");
+  if (rerank) {
+    lines.push(
+      "SEGUNDA PASADA: estos artículos ya pasaron un primer filtro, así que son los FINALISTAS. " +
+        "Compáralos ENTRE SÍ y usa todo el rango de la escala para separarlos: evita empates y " +
+        "reserva los puntajes más altos para los que claramente destacan sobre los demás de esta lista.",
+    );
+    lines.push("");
+  }
   if (topic) {
     lines.push(`CRITERIO PRINCIPAL: el usuario busca artículos sobre el tema "${topic}".`);
     lines.push(
@@ -100,6 +110,12 @@ export function buildSystemPrompt(profile: Profile, topic?: string): string {
   lines.push("- 0: irrelevante o excluido.");
   lines.push("");
   lines.push(
+    "PESO DEL DISEÑO DEL ESTUDIO: cuando el artículo indique su tipo de publicación o sus " +
+      "términos MeSH, úsalos. A igualdad de tema, un ensayo clínico aleatorizado, un metaanálisis " +
+      "o una revisión sistemática valen más que una serie o un reporte de casos.",
+  );
+  lines.push("");
+  lines.push(
     "Puntúa CADA artículo con la herramienta submit_scores, copiando el pmid EXACTAMENTE. " +
       "La razón debe ser UNA sola frase corta en ESPAÑOL. " +
       'Si un artículo no tiene resumen (solo título), puntúalo con lo disponible e indícalo con "(sin resumen)".',
@@ -118,14 +134,19 @@ export function buildUserMessage(papers: Paper[]): string {
       .filter(Boolean)
       .join(", ");
     const abstract = p.hasAbstract ? p.abstract : "(sin resumen disponible)";
-    return [
+    const lines = [
       `### Artículo ${i + 1}`,
       `pmid: ${p.pmid}`,
       `Título: ${p.title}`,
       `Revista: ${p.journal}`,
       `Autores: ${authors || "(no listados)"}`,
-      `Resumen: ${abstract}`,
-    ].join("\n");
+    ];
+    // Only emit the metadata lines that exist: fresh records are usually not indexed yet.
+    if (p.publicationTypes.length) lines.push(`Tipo de publicación: ${p.publicationTypes.join(", ")}`);
+    if (p.meshTerms.length) lines.push(`MeSH: ${p.meshTerms.join(", ")}`);
+    if (p.keywords.length) lines.push(`Palabras clave: ${p.keywords.join(", ")}`);
+    lines.push(`Resumen: ${abstract}`);
+    return lines.join("\n");
   });
   return `Evalúa los siguientes ${papers.length} artículos:\n\n${blocks.join("\n\n")}`;
 }
@@ -134,11 +155,23 @@ export type CreateMessage = (
   body: Anthropic.MessageCreateParamsNonStreaming,
 ) => Promise<Anthropic.Message>;
 
+/** Token counters accumulated across every call a scorer makes, for the run summary. */
+export interface ScorerUsage {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface Scorer {
   score(papers: Paper[], ctx: ScoreContext): Promise<ScoredPaper[]>;
+  /** Re-score the finalists in one call so they are ranked against each other, not in isolation. */
+  rerank(papers: ScoredPaper[], ctx: ScoreContext): Promise<ScoredPaper[]>;
+  readonly usage: ScorerUsage;
 }
 
 export class AnthropicScorer implements Scorer {
+  readonly usage: ScorerUsage = { calls: 0, inputTokens: 0, outputTokens: 0 };
+
   constructor(
     private readonly createMessage: CreateMessage,
     private readonly model: string,
@@ -155,6 +188,18 @@ export class AnthropicScorer implements Scorer {
       }
     }
     return scored;
+  }
+
+  /**
+   * Second pass over the best candidates. An absolute 0-10 score drifts between batches, so the
+   * finalists are re-scored together in a single call where the model can compare them directly.
+   * Keep the finalist count <= batchSize or the comparison splits across calls and loses its point.
+   */
+  async rerank(papers: ScoredPaper[], ctx: ScoreContext): Promise<ScoredPaper[]> {
+    if (papers.length < 2) return papers;
+    const refined = await this.score(papers, { ...ctx, rerank: true });
+    const byPmid = new Map(refined.map((p) => [p.pmid, p]));
+    return papers.map((p) => byPmid.get(p.pmid) ?? p);
   }
 
   /** Always returns a map covering every pmid in the batch (missing ones get a neutral score). */
@@ -219,13 +264,17 @@ export class AnthropicScorer implements Scorer {
     const body: Anthropic.MessageCreateParamsNonStreaming = {
       model: this.model,
       max_tokens: 4096,
-      system: buildSystemPrompt(ctx.profile, ctx.topic),
+      system: buildSystemPrompt(ctx.profile, ctx.topic, ctx.rerank),
       tools: [submitScoresTool],
       tool_choice: { type: "tool", name: SCORE_TOOL_NAME },
       messages: [{ role: "user", content: buildUserMessage(batch) }],
     };
 
     const res = await this.createMessage(body);
+    this.usage.calls++;
+    this.usage.inputTokens += res.usage?.input_tokens ?? 0;
+    this.usage.outputTokens += res.usage?.output_tokens ?? 0;
+
     const block = res.content.find((b) => b.type === "tool_use");
     if (!block || block.type !== "tool_use") {
       throw new Error(

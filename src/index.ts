@@ -2,15 +2,22 @@ import { parseArgs } from "node:util";
 import { config } from "./config.js";
 import { loadEnv, type Env } from "./env.js";
 import { loadProfile } from "./profile.js";
-import { PubMedClient, journalTerm, topicTerm } from "./pubmed.js";
+import { PubMedClient } from "./pubmed.js";
 import { makeAnthropicScorer } from "./scoring.js";
 import { JsonFileStore } from "./state.js";
 import { ConsoleDeliverer, MultiDeliverer, TelegramDeliverer, type Deliverer } from "./deliver.js";
 import { parseRecipients, selectRecipients } from "./recipients.js";
 import { loadCache, saveCache, type CacheSnapshot } from "./cache.js";
-import { filterByThreshold, renderDigest } from "./digest.js";
+import { RunMetrics, writeStepSummary } from "./metrics.js";
+import {
+  deliverDigest,
+  deliverSearch,
+  runDigestPipeline,
+  runSearchPipeline,
+  type PipelineDeps,
+} from "./pipeline.js";
 import { logger } from "./logger.js";
-import { chunk, stripArgSeparator } from "./util.js";
+import { stripArgSeparator } from "./util.js";
 import type { Paper, ScoredPaper } from "./types.js";
 
 const STATE_PATH = "state.json";
@@ -84,177 +91,136 @@ async function main(): Promise<void> {
   }
 }
 
+/** Build everything the pipeline needs from flags and the environment. */
+function makeDeps(env: Env, flags: CommonFlags): PipelineDeps {
+  const profile = loadProfile();
+  return {
+    cfg: { ...config, threshold: profile.threshold ?? config.threshold },
+    profile,
+    pubmed: new PubMedClient({ email: env.EUTILS_EMAIL, apiKey: env.NCBI_API_KEY }),
+    scorer: makeAnthropicScorer(env.ANTHROPIC_API_KEY, config.model, config.batchSize),
+    deliverer: makeDeliverer(env, flags),
+    metrics: new RunMetrics(),
+  };
+}
+
 async function runDigest(flags: CommonFlags): Promise<void> {
   const env = loadEnv();
-  const profile = loadProfile();
-  const deliverer = makeDeliverer(env, flags);
+  const deps = makeDeps(env, flags);
   const cachePath = flags.cachePath ?? ".cache/digest.json";
   const title = digestTitle();
 
-  // --- Replay from cache: no PubMed, no Anthropic, no state ---
-  if (flags.fromCache) {
-    const snap = await loadCache(cachePath);
-    logger.info("loaded from cache", { path: cachePath, scored: snap.scored.length });
-    const kept = filterByThreshold(snap.scored, config.threshold);
-    await deliverer.send(renderDigest(kept, { title }));
-    logger.info("digest replayed from cache", { kept: kept.length });
-    return;
-  }
-
-  // --- Re-score cached papers: skips PubMed, re-runs scoring, no state ---
-  if (flags.rescore) {
-    const snap = await loadCache(cachePath);
-    logger.info("re-scoring cached papers", { path: cachePath, papers: snap.papers.length });
-    const scorer = makeAnthropicScorer(env.ANTHROPIC_API_KEY, config.model, config.batchSize);
-    const scored = await scorer.score(snap.papers, { profile });
-    if (flags.saveCache) {
-      await saveCache(cachePath, snapshot("digest", undefined, snap.papers, scored));
-      logger.info("cache updated", { path: cachePath });
+  try {
+    // --- Replay from cache: no PubMed, no Anthropic, no state ---
+    if (flags.fromCache) {
+      const snap = await loadCache(cachePath);
+      logger.info("loaded from cache", { path: cachePath, scored: snap.scored.length });
+      deps.metrics.scored = snap.scored.length;
+      await deliverDigest(deps, snap.scored, title);
+      return;
     }
-    const kept = filterByThreshold(scored, config.threshold);
-    await deliverer.send(renderDigest(kept, { title }));
-    logger.info("digest delivered (rescore)", { kept: kept.length });
-    return;
-  }
 
-  // --- Normal path: fetch + dedupe + score (+ optional cache) + deliver + state ---
-  const store = new JsonFileStore(STATE_PATH);
-  await store.load();
-  logger.info("loaded state", { seen: store.size() });
-
-  const sources = [
-    ...config.journals.map((j) => ({ label: j, term: journalTerm(j) })),
-    ...config.topics.map((t) => ({ label: t, term: topicTerm(t) })),
-  ];
-
-  const pubmed = new PubMedClient({ email: env.EUTILS_EMAIL, apiKey: env.NCBI_API_KEY });
-  const pmidToSource = new Map<string, string>();
-  for (const s of sources) {
-    try {
-      const ids = await pubmed.esearch(s.term, { reldate: config.lookbackDays, retmax: 200 });
-      logger.info("esearch", { source: s.label, found: ids.length });
-      for (const id of ids) {
-        if (store.has(id)) continue; // already handled in a previous run
-        if (!pmidToSource.has(id)) pmidToSource.set(id, s.label); // dedupe within this run
+    // --- Re-score cached papers: skips PubMed, re-runs scoring, no state ---
+    if (flags.rescore) {
+      const snap = await loadCache(cachePath);
+      logger.info("re-scoring cached papers", { path: cachePath, papers: snap.papers.length });
+      const scored = await deps.scorer.score(snap.papers, { profile: deps.profile });
+      const refined = await deps.scorer.rerank(
+        [...scored].sort((a, b) => b.relevance - a.relevance).slice(0, deps.cfg.rerankTopK),
+        { profile: deps.profile },
+      );
+      const merged = mergeScores(scored, refined);
+      recordUsage(deps);
+      deps.metrics.scored = merged.length;
+      if (flags.saveCache) {
+        await saveCache(cachePath, snapshot("digest", undefined, snap.papers, merged));
+        logger.info("cache updated", { path: cachePath });
       }
-    } catch (err) {
-      logger.error("esearch failed, skipping source", { source: s.label, error: String(err) });
+      await deliverDigest(deps, merged, title);
+      return;
     }
+
+    // --- Normal path ---
+    const store = new JsonFileStore(STATE_PATH);
+    await store.load();
+    logger.info("loaded state", { seen: store.size() });
+
+    const { papers, scored } = await runDigestPipeline(deps, {
+      title,
+      dryRun: flags.dryRun,
+      limit: flags.limit,
+      store,
+    });
+
+    if (flags.saveCache && papers.length > 0) {
+      await saveCache(cachePath, snapshot("digest", undefined, papers, scored));
+      logger.info("cache saved", { path: cachePath, papers: papers.length });
+    }
+  } finally {
+    reportRun(deps, "Digest");
   }
-
-  let newPmids = [...pmidToSource.keys()];
-  logger.info("new PMIDs after dedupe", { count: newPmids.length });
-  if (newPmids.length === 0) {
-    logger.info("nothing new to score");
-    if (flags.dryRun) await deliverer.send(renderDigest([], { title }));
-    return;
-  }
-
-  const cap = Math.min(flags.limit ?? config.maxAbstractsPerRun, config.maxAbstractsPerRun);
-  if (newPmids.length > cap) {
-    logger.warn("capping papers scored", { from: newPmids.length, to: cap });
-    newPmids = newPmids.slice(0, cap);
-  }
-
-  const papers = await fetchPapers(pubmed, newPmids, pmidToSource);
-  const toScore = config.scoreWithoutAbstract ? papers : papers.filter((p) => p.hasAbstract);
-  if (!config.scoreWithoutAbstract && toScore.length < papers.length) {
-    logger.info("dropped papers without abstract", { dropped: papers.length - toScore.length });
-  }
-
-  const scorer = makeAnthropicScorer(env.ANTHROPIC_API_KEY, config.model, config.batchSize);
-  const scored = await scorer.score(toScore, { profile });
-
-  if (flags.saveCache) {
-    await saveCache(cachePath, snapshot("digest", undefined, papers, scored));
-    logger.info("cache saved", { path: cachePath, papers: papers.length });
-  }
-
-  const kept = filterByThreshold(scored, config.threshold);
-  logger.info("scored", { total: scored.length, kept: kept.length, threshold: config.threshold });
-
-  await deliverer.send(renderDigest(kept, { title }));
-
-  if (flags.dryRun) {
-    logger.info("dry-run: state not updated");
-    return;
-  }
-
-  const toMark =
-    config.markSeenMode === "delivered" ? kept.map((p) => p.pmid) : papers.map((p) => p.pmid);
-  store.add(toMark);
-  await store.save();
-  logger.info("digest delivered and state saved", {
-    delivered: kept.length,
-    marked: toMark.length,
-    seenTotal: store.size(),
-  });
 }
 
 async function runSearch(topic: string, flags: CommonFlags): Promise<void> {
   const env = loadEnv();
-  const profile = loadProfile();
-  const deliverer = makeDeliverer(env, flags);
+  const deps = makeDeps(env, flags);
   const cachePath = flags.cachePath ?? ".cache/search.json";
 
-  if (flags.fromCache) {
-    const snap = await loadCache(cachePath);
-    const t = snap.topic ?? topic;
-    logger.info("loaded search from cache", { path: cachePath, scored: snap.scored.length });
-    await deliverer.send(renderDigest(topN(snap.scored), { title: `Búsqueda: ${t}` }));
-    return;
-  }
-
-  if (flags.rescore) {
-    const snap = await loadCache(cachePath);
-    const t = snap.topic ?? topic;
-    logger.info("re-scoring cached search papers", { path: cachePath, papers: snap.papers.length });
-    const scorer = makeAnthropicScorer(env.ANTHROPIC_API_KEY, config.model, config.batchSize);
-    const scored = await scorer.score(snap.papers, { profile, topic: t });
-    if (flags.saveCache) {
-      await saveCache(cachePath, snapshot("search", t, snap.papers, scored));
-      logger.info("cache updated", { path: cachePath });
+  try {
+    if (flags.fromCache) {
+      const snap = await loadCache(cachePath);
+      const t = snap.topic ?? topic;
+      logger.info("loaded search from cache", { path: cachePath, scored: snap.scored.length });
+      deps.metrics.scored = snap.scored.length;
+      await deliverSearch(deps, snap.scored, `Búsqueda: ${t}`);
+      return;
     }
-    await deliverer.send(renderDigest(topN(scored), { title: `Búsqueda: ${t}` }));
-    return;
+
+    if (flags.rescore) {
+      const snap = await loadCache(cachePath);
+      const t = snap.topic ?? topic;
+      logger.info("re-scoring cached search papers", { path: cachePath, papers: snap.papers.length });
+      const scored = await deps.scorer.score(snap.papers, { profile: deps.profile, topic: t });
+      recordUsage(deps);
+      deps.metrics.scored = scored.length;
+      if (flags.saveCache) {
+        await saveCache(cachePath, snapshot("search", t, snap.papers, scored));
+        logger.info("cache updated", { path: cachePath });
+      }
+      await deliverSearch(deps, scored, `Búsqueda: ${t}`);
+      return;
+    }
+
+    const { papers, scored } = await runSearchPipeline(deps, {
+      topic,
+      title: `Búsqueda: ${topic}`,
+      limit: flags.limit,
+    });
+
+    if (flags.saveCache && papers.length > 0) {
+      await saveCache(cachePath, snapshot("search", topic, papers, scored));
+      logger.info("cache saved", { path: cachePath, papers: papers.length });
+    }
+  } finally {
+    reportRun(deps, `Búsqueda: ${topic}`);
   }
-
-  const pubmed = new PubMedClient({ email: env.EUTILS_EMAIL, apiKey: env.NCBI_API_KEY });
-  const term = topicTerm(topic);
-  logger.info("search", { topic, term });
-  let ids = await pubmed.esearch(term, { reldate: config.lookbackDays, retmax: 200 });
-  logger.info("search esearch", { found: ids.length });
-
-  if (ids.length === 0) {
-    await deliverer.send(`Búsqueda: ${topic}\n\nSin resultados recientes.`);
-    return;
-  }
-
-  const cap = Math.min(flags.limit ?? config.maxAbstractsPerRun, config.maxAbstractsPerRun);
-  if (ids.length > cap) {
-    logger.warn("capping search papers", { from: ids.length, to: cap });
-    ids = ids.slice(0, cap);
-  }
-
-  const source = new Map(ids.map((id) => [id, topic] as const));
-  const papers = await fetchPapers(pubmed, ids, source);
-  const toScore = config.scoreWithoutAbstract ? papers : papers.filter((p) => p.hasAbstract);
-
-  const scorer = makeAnthropicScorer(env.ANTHROPIC_API_KEY, config.model, config.batchSize);
-  const scored = await scorer.score(toScore, { profile, topic });
-
-  if (flags.saveCache) {
-    await saveCache(cachePath, snapshot("search", topic, papers, scored));
-    logger.info("cache saved", { path: cachePath, papers: papers.length });
-  }
-
-  // search ranks top-N descending; the profile threshold is NOT applied here.
-  await deliverer.send(renderDigest(topN(scored), { title: `Búsqueda: ${topic}` }));
-  logger.info("search delivered", { results: Math.min(scored.length, config.searchTopResults) });
 }
 
-function topN(scored: ScoredPaper[]): ScoredPaper[] {
-  return [...scored].sort((a, b) => b.relevance - a.relevance).slice(0, config.searchTopResults);
+function mergeScores(all: ScoredPaper[], refined: ScoredPaper[]): ScoredPaper[] {
+  const byPmid = new Map(refined.map((p) => [p.pmid, p]));
+  return all.map((p) => byPmid.get(p.pmid) ?? p);
+}
+
+function recordUsage(deps: PipelineDeps): void {
+  deps.metrics.calls = deps.scorer.usage.calls;
+  deps.metrics.inputTokens = deps.scorer.usage.inputTokens;
+  deps.metrics.outputTokens = deps.scorer.usage.outputTokens;
+}
+
+/** Always emit the run report, including when the run failed part-way through. */
+function reportRun(deps: PipelineDeps, title: string): void {
+  logger.info("run summary", deps.metrics.toFields(deps.cfg.pricing));
+  writeStepSummary(deps.metrics.toMarkdown(deps.cfg.pricing, title));
 }
 
 function snapshot(
@@ -272,20 +238,6 @@ function snapshot(
     papers,
     scored,
   };
-}
-
-async function fetchPapers(
-  pubmed: PubMedClient,
-  pmids: string[],
-  source: ReadonlyMap<string, string>,
-): Promise<Paper[]> {
-  const out: Paper[] = [];
-  for (const batch of chunk(pmids, config.efetchIdBatchSize)) {
-    const papers = await pubmed.efetch(batch);
-    for (const p of papers) p.source = source.get(p.pmid) ?? "";
-    out.push(...papers);
-  }
-  return out;
 }
 
 /** ConsoleDeliverer for --dry-run (nobody); otherwise a MultiDeliverer over the selected recipients. */
@@ -325,6 +277,8 @@ function printHelp(): void {
       "  --rescore          Re-puntúa los papers cacheados (sin PubMed; sí usa Anthropic).",
       "  --cache <ruta>     Ruta del caché (por defecto .cache/<comando>.json).",
       "  -h, --help         Muestra esta ayuda.",
+      "",
+      "La cobertura (revistas y búsquedas permanentes) se edita en profile.yaml.",
       "",
     ].join("\n"),
   );

@@ -4,33 +4,11 @@ import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 import { AnthropicScorer, type CreateMessage } from "../src/scoring.js";
-import type { Paper } from "../src/types.js";
-import type { Profile } from "../src/profile.js";
+import { makePaper as paper, makeProfile } from "./helpers.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-const profile: Profile = {
-  description: "Perfil de prueba.",
-  topics: [],
-  must_have: [],
-  nice_to_have: [],
-  exclude: [],
-  exemplar_papers: [],
-};
-
-function paper(pmid: string, overrides: Partial<Paper> = {}): Paper {
-  return {
-    pmid,
-    title: `Título ${pmid}`,
-    abstract: "resumen",
-    hasAbstract: true,
-    authors: [],
-    journal: "Revista",
-    pubDate: "2026",
-    source: "",
-    ...overrides,
-  };
-}
+const profile = makeProfile();
 
 function toolUseMessage(scores: unknown): Anthropic.Message {
   return {
@@ -113,6 +91,84 @@ describe("AnthropicScorer", () => {
       expect(s.reason).toBe("No evaluado por el modelo.");
     }
     expect(bodies).toHaveLength(2); // two attempts, no reconcile (first call yielded nothing)
+  });
+
+  it("accumulates token usage across calls for the run report", async () => {
+    const { fn } = queued([
+      toolUseMessage([
+        { pmid: "1", relevance: 9, reason: "a" },
+        { pmid: "2", relevance: 8, reason: "b" },
+      ]),
+    ]);
+    const scorer = new AnthropicScorer(fn, "m", 1); // batchSize 1 => two calls
+
+    await scorer.score([paper("1"), paper("2")], { profile });
+
+    expect(scorer.usage.calls).toBe(2);
+    expect(scorer.usage.inputTokens).toBe(2); // 1 per stubbed response
+    expect(scorer.usage.outputTokens).toBe(2);
+  });
+
+  it("re-ranks the finalists in a single call that tells the model to compare them", async () => {
+    const { fn, bodies } = queued([
+      toolUseMessage([
+        { pmid: "1", relevance: 10, reason: "el mejor" },
+        { pmid: "2", relevance: 4, reason: "flojo" },
+      ]),
+    ]);
+    const scorer = new AnthropicScorer(fn, "m", 10);
+    const finalists = [
+      { ...paper("1"), relevance: 8, reason: "a" },
+      { ...paper("2"), relevance: 8, reason: "b" },
+    ];
+
+    const refined = await scorer.rerank(finalists, { profile });
+
+    expect(bodies).toHaveLength(1);
+    expect(String(bodies[0]!.system)).toContain("SEGUNDA PASADA");
+    expect(refined.find((p) => p.pmid === "1")!.relevance).toBe(10);
+    expect(refined.find((p) => p.pmid === "2")!.relevance).toBe(4);
+  });
+
+  it("skips the rerank call when there is nothing to compare", async () => {
+    const { fn, bodies } = queued([toolUseMessage([])]);
+    const scorer = new AnthropicScorer(fn, "m", 10);
+
+    const only = [{ ...paper("1"), relevance: 9, reason: "a" }];
+    expect(await scorer.rerank(only, { profile })).toEqual(only);
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("passes publication types and MeSH terms to the model", async () => {
+    const { fn, bodies } = queued([toolUseMessage([{ pmid: "1", relevance: 9, reason: "a" }])]);
+    const scorer = new AnthropicScorer(fn, "m", 10);
+
+    await scorer.score(
+      [
+        paper("1", {
+          publicationTypes: ["Randomized Controlled Trial"],
+          meshTerms: ["Stroke", "Thrombectomy"],
+          keywords: ["LVO"],
+        }),
+      ],
+      { profile },
+    );
+
+    const userMessage = String(bodies[0]!.messages[0]!.content);
+    expect(userMessage).toContain("Tipo de publicación: Randomized Controlled Trial");
+    expect(userMessage).toContain("MeSH: Stroke, Thrombectomy");
+    expect(userMessage).toContain("Palabras clave: LVO");
+  });
+
+  it("omits the metadata lines for records PubMed has not indexed yet", async () => {
+    const { fn, bodies } = queued([toolUseMessage([{ pmid: "1", relevance: 9, reason: "a" }])]);
+    const scorer = new AnthropicScorer(fn, "m", 10);
+
+    await scorer.score([paper("1")], { profile });
+
+    const userMessage = String(bodies[0]!.messages[0]!.content);
+    expect(userMessage).not.toContain("MeSH:");
+    expect(userMessage).not.toContain("Tipo de publicación:");
   });
 
   it("validates the documented sample tool output", async () => {

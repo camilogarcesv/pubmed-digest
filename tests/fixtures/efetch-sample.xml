@@ -34,8 +34,32 @@
             <Initials>J</Initials>
           </Author>
         </AuthorList>
+        <PublicationTypeList>
+          <PublicationType UI="D016449">Randomized Controlled Trial</PublicationType>
+          <PublicationType UI="D016428">Journal Article</PublicationType>
+        </PublicationTypeList>
       </Article>
+      <MeshHeadingList>
+        <MeshHeading>
+          <DescriptorName UI="D020521" MajorTopicYN="Y">Stroke</DescriptorName>
+          <QualifierName UI="Q000628" MajorTopicYN="N">therapy</QualifierName>
+        </MeshHeading>
+        <MeshHeading>
+          <DescriptorName UI="D017130" MajorTopicYN="N">Thrombectomy</DescriptorName>
+        </MeshHeading>
+      </MeshHeadingList>
+      <KeywordList Owner="NOTNLM">
+        <Keyword MajorTopicYN="N">thrombectomy</Keyword>
+        <Keyword MajorTopicYN="N">perfusion imaging</Keyword>
+      </KeywordList>
     </MedlineCitation>
+    <PubmedData>
+      <PublicationStatus>ppublish</PublicationStatus>
+      <ArticleIdList>
+        <ArticleId IdType="pubmed">40123456</ArticleId>
+        <ArticleId IdType="doi">10.3174/ajnr.A1234</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
   </PubmedArticle>
   <PubmedArticle>
     <MedlineCitation Status="Publisher" Owner="NLM">
@@ -59,7 +83,45 @@
             <Initials>L</Initials>
           </Author>
         </AuthorList>
+        <ELocationID EIdType="doi" ValidYN="Y">10.1007/s00330-026-9999-1</ELocationID>
+        <PublicationTypeList>
+          <PublicationType UI="D016428">Journal Article</PublicationType>
+        </PublicationTypeList>
       </Article>
     </MedlineCitation>
+    <PubmedData>
+      <PublicationStatus>aheadofprint</PublicationStatus>
+      <ArticleIdList>
+        <ArticleId IdType="pubmed">40123457</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation Status="Publisher" Owner="NLM">
+      <PMID Version="1">40123458</PMID>
+      <Article PubModel="Print-Electronic">
+        <Journal>
+          <ISOAbbreviation>Eur Radiol</ISOAbbreviation>
+          <Title>European Radiology</Title>
+          <JournalIssue>
+            <PubDate>
+              <Year>2026</Year>
+              <Month>Jul</Month>
+            </PubDate>
+          </JournalIssue>
+        </Journal>
+        <ArticleTitle>Correction to: Deep Learning Reconstruction for Abdominal CT.</ArticleTitle>
+        <PublicationTypeList>
+          <PublicationType UI="D016420">Published Erratum</PublicationType>
+        </PublicationTypeList>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <PublicationStatus>ppublish</PublicationStatus>
+      <ArticleIdList>
+        <ArticleId IdType="pubmed">40123458</ArticleId>
+        <ArticleId IdType="doi">10.1007/s00330-026-9999-2</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
   </PubmedArticle>
 </PubmedArticleSet>

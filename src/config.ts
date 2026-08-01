@@ -20,6 +20,28 @@ export interface AppConfig {
   scoreWithoutAbstract: boolean;
   /** PMIDs per efetch request. */
   efetchIdBatchSize: number;
+  /** Max PMIDs esearch may return per source. Above this the run warns about truncation. */
+  esearchRetmax: number;
+  /**
+   * NLM publication types dropped before scoring. These are editorial artifacts, not research:
+   * filtering them here removes digest noise AND the cost of scoring them.
+   */
+  excludedPublicationTypes: string[];
+  /**
+   * Second scoring pass that re-ranks only the best candidates against each other. A model's
+   * absolute 0-10 score drifts between batches; comparing the finalists head-to-head fixes the
+   * ordering for the price of one extra call. 0 disables it.
+   */
+  rerankTopK: number;
+  /** Hard cap on delivered papers, applied after the threshold. */
+  maxDelivered: number;
+  /**
+   * If fewer than this many papers clear the threshold, fill up to `minDelivered` with the
+   * next best ones so a quiet week still produces a useful digest instead of an empty one.
+   */
+  minDelivered: number;
+  /** Anthropic price per 1M tokens, for the estimated cost in the run summary. */
+  pricing: { inputPerMTok: number; outputPerMTok: number };
   /**
    * Which PMIDs the digest records in state.json:
    *  - "considered": every paper evaluated this run (so below-threshold papers aren't re-scored,
@@ -27,35 +49,30 @@ export interface AppConfig {
    *  - "delivered": only papers actually sent (strict "already sent" semantics).
    */
   markSeenMode: MarkSeenMode;
-  /** Journals to follow (matched with the [Journal] tag; ISO abbreviations are safest). */
-  journals: string[];
-  /**
-   * Standing ad-hoc topic queries included in every digest. Plain phrases are wrapped as
-   * ("word"[tiab] AND ...); strings that already contain a field tag or AND/OR pass through.
-   */
-  topics: string[];
 }
 
 export const config: AppConfig = {
   model: "claude-haiku-4-5",
   threshold: 7,
   lookbackDays: 8,
-  maxAbstractsPerRun: 120,
+  maxAbstractsPerRun: 250,
   batchSize: 18,
   searchTopResults: 15,
   scoreWithoutAbstract: true,
   efetchIdBatchSize: 200,
+  esearchRetmax: 200,
+  excludedPublicationTypes: [
+    "Published Erratum",
+    "Comment",
+    "Retraction of Publication",
+    "Retracted Publication",
+    "Editorial",
+    "News",
+    "Congress",
+  ],
+  rerankTopK: 15,
+  maxDelivered: 12,
+  minDelivered: 3,
+  pricing: { inputPerMTok: 1.0, outputPerMTok: 5.0 },
   markSeenMode: "considered",
-  journals: [
-    "AJNR Am J Neuroradiol",
-    "Clin Neuroradiol",
-    "Interv Neuroradiol",
-    "Eur Radiol",
-    "Emerg Radiol",
-  ],
-  topics: [
-    // Examples (uncomment / edit):
-    // '("large vessel occlusion"[tiab] AND "thrombectomy"[tiab])',
-    // '("glioma"[tiab] AND "MRI"[tiab])',
-  ],
 };
