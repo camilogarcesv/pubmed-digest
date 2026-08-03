@@ -18,14 +18,14 @@
     "eval": "tsx src/eval.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.112.1",
+    "@anthropic-ai/sdk": "0.115.0",
     "fast-xml-parser": "5.10.1",
     "yaml": "2.9.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260801.1",
-    "@types/node": "26.1.1",
+    "@types/node": "26.1.2",
     "tsx": "4.23.1",
     "typescript": "7.0.2",
     "vitest": "3.2.7"
