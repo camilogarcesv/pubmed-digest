@@ -1,220 +1,1147 @@
 {
-  "seen": [
-    "42419909",
-    "42419910",
-    "42423755",
-    "42423756",
-    "42423757",
-    "42423877",
-    "42425759",
-    "42426243",
-    "42426244",
-    "42426245",
-    "42426246",
-    "42429838",
-    "42429839",
-    "42431714",
-    "42432260",
-    "42432261",
-    "42432262",
-    "42435230",
-    "42437681",
-    "42437682",
-    "42440105",
-    "42440106",
-    "42440107",
-    "42446629",
-    "42446630",
-    "42446631",
-    "42446632",
-    "42446636",
-    "42446637",
-    "42446638",
-    "42448592",
-    "42448899",
-    "42455155",
-    "42455347",
-    "42455348",
-    "42455349",
-    "42455474",
-    "42458056",
-    "42463301",
-    "42463302",
-    "42467222",
-    "42467223",
-    "42467224",
-    "42486148",
-    "42486379",
-    "42486397",
-    "42486683",
-    "42486966",
-    "42486967",
-    "42487083",
-    "42487246",
-    "42487902",
-    "42488080",
-    "42488348",
-    "42488381",
-    "42488715",
-    "42488952",
-    "42488958",
-    "42489305",
-    "42489532",
-    "42490945",
-    "42491350",
-    "42491398",
-    "42492063",
-    "42492850",
-    "42493243",
-    "42494399",
-    "42494783",
-    "42495508",
-    "42495730",
-    "42495732",
-    "42495733",
-    "42495739",
-    "42496693",
-    "42496900",
-    "42496901",
-    "42497038",
-    "42497157",
-    "42497287",
-    "42497289",
-    "42498265",
-    "42498627",
-    "42498628",
-    "42498629",
-    "42498630",
-    "42498631",
-    "42498648",
-    "42498649",
-    "42498650",
-    "42498651",
-    "42498652",
-    "42498653",
-    "42498844",
-    "42498907",
-    "42500282",
-    "42500392",
-    "42500800",
-    "42501082",
-    "42501083",
-    "42501084",
-    "42501085",
-    "42501086",
-    "42501394",
-    "42502486",
-    "42502551",
-    "42503056",
-    "42503560",
-    "42506134",
-    "42506372",
-    "42507151",
-    "42507501",
-    "42507506",
-    "42507785",
-    "42507786",
-    "42507787",
-    "42507788",
-    "42507789",
-    "42507790",
-    "42507791",
-    "42507792",
-    "42507793",
-    "42507794",
-    "42507796",
-    "42507797",
-    "42507798",
-    "42507799",
-    "42507800",
-    "42508056",
-    "42508138",
-    "42508236",
-    "42508673",
-    "42508954",
-    "42509478",
-    "42509480",
-    "42509483",
-    "42509731",
-    "42510001",
-    "42510038",
-    "42510415",
-    "42512479",
-    "42512506",
-    "42513317",
-    "42517759",
-    "42517760",
-    "42517761",
-    "42517762",
-    "42517763",
-    "42517764",
-    "42517765",
-    "42517766",
-    "42517767",
-    "42517768",
-    "42517770",
-    "42517771",
-    "42517772",
-    "42517773",
-    "42517774",
-    "42517876",
-    "42518031",
-    "42518172",
-    "42518978",
-    "42519386",
-    "42520379",
-    "42520487",
-    "42520488",
-    "42520739",
-    "42521431",
-    "42521505",
-    "42521506",
-    "42521507",
-    "42521849",
-    "42522141",
-    "42522563",
-    "42523481",
-    "42523499",
-    "42524926",
-    "42525110",
-    "42525133",
-    "42525281",
-    "42525907",
-    "42526164",
-    "42527040",
-    "42527156",
-    "42527217",
-    "42527301",
-    "42527303",
-    "42527304",
-    "42527305",
-    "42527306",
-    "42527307",
-    "42527308",
-    "42527309",
-    "42527900",
-    "42529739",
-    "42529818",
-    "42529831",
-    "42530243",
-    "42530625",
-    "42530745",
-    "42531182",
-    "42531250",
-    "42532674",
-    "42532675",
-    "42532676",
-    "42532677",
-    "42534530",
-    "42534736",
-    "42535185",
-    "42535264",
-    "42535283",
-    "42535884",
-    "42536129",
-    "42536166",
-    "42536568",
-    "42536796"
-  ],
-  "updatedAt": "2026-08-01T03:40:34.270Z"
+  "version": 2,
+  "papers": {
+    "42419909": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42419910": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42423755": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42423756": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42423757": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42423877": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42425759": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42426243": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42426244": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42426245": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42426246": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42429838": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42429839": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42431714": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42432260": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42432261": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42432262": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42435230": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42437681": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42437682": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42440105": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42440106": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42440107": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42446629": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42446630": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42446631": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42446632": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42446636": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42446637": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42446638": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42448592": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42448899": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42455155": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42455347": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42455348": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42455349": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42455474": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42458056": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42463301": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42463302": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42467222": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42467223": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42467224": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42486148": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42486379": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42486397": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42486683": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42486966": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42486967": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42487083": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42487246": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42487902": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42488080": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42488348": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42488381": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42488715": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42488952": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42488958": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42489305": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42489532": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42490945": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42491350": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42491398": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42492063": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42492850": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42493243": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42494399": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42494783": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42495508": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42495730": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42495732": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42495733": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42495739": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42496693": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42496900": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42496901": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42497038": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42497157": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42497287": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42497289": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498265": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498627": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498628": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498629": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498630": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498631": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498648": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498649": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498650": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498651": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498652": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498653": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498844": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42498907": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42500282": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42500392": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42500800": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42501082": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42501083": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42501084": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42501085": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42501086": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42501394": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42502486": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42502551": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42503056": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42503560": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42506134": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42506372": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507151": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507501": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507506": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507785": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507786": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507787": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507788": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507789": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507790": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507791": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507792": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507793": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507794": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507796": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507797": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507798": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507799": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42507800": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42508056": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42508138": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42508236": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42508673": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42508954": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42509478": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42509480": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42509483": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42509731": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42510001": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42510038": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42510415": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42512479": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42512506": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42513317": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517759": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517760": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517761": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517762": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517763": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517764": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517765": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517766": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517767": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517768": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517770": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517771": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517772": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517773": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517774": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42517876": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42518031": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42518172": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42518978": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42519386": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42520379": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42520487": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42520488": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42520739": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42521431": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42521505": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42521506": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42521507": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42521849": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42522141": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42522563": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42523481": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42523499": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42524926": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42525110": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42525133": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42525281": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42525907": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42526164": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527040": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527156": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527217": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527301": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527303": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527304": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527305": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527306": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527307": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527308": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527309": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42527900": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42529739": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42529818": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42529831": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42530243": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42530625": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42530745": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42531182": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42531250": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42532674": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42532675": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42532676": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42532677": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42534530": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42534736": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42535185": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42535264": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42535283": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42535884": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42536129": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42536166": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42536568": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42536796": {
+      "title": "",
+      "firstSeen": "2026-08-01T03:40:34.270Z",
+      "delivered": false
+    },
+    "42537731": {
+      "title": "Quantitative analysis of Toxic Metals in Plasma and Intracranial Thrombi in Acute Ischemic Stroke.",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 3,
+      "delivered": false
+    },
+    "42539308": {
+      "title": "Evolution of Diagnosis and Management of Traumatic Intracranial Aneurysms Secondary to Penetrating Brain Injury.",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 8,
+      "delivered": true
+    },
+    "42539831": {
+      "title": "Cerebral small vessel disease impairs dynamic cerebral autoregulation and mediates outcomes after stroke thrombectomy.",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 9,
+      "delivered": true
+    },
+    "42541435": {
+      "title": "From machine learning to deep learning in attention deficit hyperactivity disorder diagnosis: A bibliometric analysis of global trends (2011-2024).",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42541520": {
+      "title": "A multimodal prediction model for brain hematoma expansion based on deep neural network with transformer-driven collaborative attention fusion.",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 7,
+      "delivered": true
+    },
+    "42542614": {
+      "title": "Delayed M1 Dissection After Thrombectomy Treated With Rescue Stenting and Tirofiban: A Case Report.",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 6,
+      "delivered": false
+    },
+    "42542723": {
+      "title": "Sex-specific effects of methylprednisolone on outcomes after endovascular treatment for acute ischemic stroke due to large vessel occlusion: A secondary analysis of the MARVEL trial.",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 7,
+      "delivered": true
+    },
+    "42543748": {
+      "title": "Global and Voxel-Wise Brain Age Prediction Analyses Following Perinatal Stroke.",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 5,
+      "delivered": false
+    },
+    "42543816": {
+      "title": "Postoperative Anti-NMDA Receptor Encephalitis Following Resection of an Insular Astrocytoma: A Case Report.",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 1,
+      "delivered": false
+    },
+    "42544483": {
+      "title": "Persistence of Association of Blood Biomarkers With Risk of Recurrent Stroke on Long-Term Follow-Up: Population-Based Study.",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 4,
+      "delivered": false
+    },
+    "42544504": {
+      "title": "Standard Antiplatelet Therapy Versus Thrombolysis in Acute Spontaneous Spinal Cord Infarction: A Propensity Score-Matched Analysis.",
+      "firstSeen": "2026-08-03T14:47:22.992Z",
+      "relevance": 2,
+      "delivered": false
+    }
+  },
+  "updatedAt": "2026-08-03T14:47:22.993Z"
 }
