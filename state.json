@@ -1141,7 +1141,675 @@
       "firstSeen": "2026-08-03T14:47:22.992Z",
       "relevance": 2,
       "delivered": false
+    },
+    "42545488": {
+      "title": "Hyperdense middle cerebral artery sign is not associated with functional outcome following mechanical thrombectomy.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42545489": {
+      "title": "MRI-based cortical morphometry in traumatic brain injury: a pilot longitudinal study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42545490": {
+      "title": "Correction to: Recanalizing distal and small medium vessel occlusions - single-center experience with the new Q catheters.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "delivered": false
+    },
+    "42545535": {
+      "title": "The Influence of Patient Persona and Affective Framing on Management Recommendations of ChatGPT, Gemini and Claude for Unruptured Intracranial Aneurysms: A Comparative Benchmarking Study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42545629": {
+      "title": "Efficacy and Safety of an Early Aggressive Lipid-Lowering Strategy Using Triple Therapy After Mechanical Thrombectomy.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42545711": {
+      "title": "One-Year Outcomes After Endovascular Treatment for Large Acute Ischemic Stroke: The TESLA Randomized Clinical Trial.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42545924": {
+      "title": "Does Severe Early Motor Deficit Define Recovery Ceiling After Basal Ganglia or Thalamic Hemorrhage?",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42546223": {
+      "title": "Beating the Odds: Successful Thrombectomy Followed By Heart Transplant in a Pediatric Ventricular Assist Device Patient.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42546266": {
+      "title": "18F-Fluciclovine (18F-FACBC) PET/MRI Findings in Tumefactive Demyelinating Lesion: A Case Report.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42548587": {
+      "title": "Autophagy in ischemic stroke: pathophysiology, therapeutics, and challenges ahead.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42548620": {
+      "title": "Radiomics and clinical data predict pseudoprogression after radiotherapy in high-grade glioma.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42548633": {
+      "title": "Risk assessment of acute heart failure after endovascular therapy in acute ischemic stroke: a nomogram-based study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42548762": {
+      "title": "Association between plasma ADAMTS13 levels/activity and the risk of ischemic stroke and outcomes of recanalization therapies: a systematic review and meta-analysis.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42549237": {
+      "title": "Endovascular Stent-Assisted Intracranial Lysis for Acute Middle Cerebral Artery Occlusion in a Young Woman with Primary Sjögren's Syndrome: Case Report.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42549239": {
+      "title": "Ischaemic Stroke as a Manifestation of Marantic Endocarditis in Lung Adenocarcinoma.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42550018": {
+      "title": "DBT-DINO: Toward Foundation Model-Based Analysis of Digital Breast Tomosynthesis.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42550019": {
+      "title": "Associations of Popliteal Artery Wall Morphology at MRI and Knee Osteoarthritis in the Osteoarthritis Initiative.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42550020": {
+      "title": "Hepatic Arterial Infusion Chemotherapy as Second-line Therapy in Advanced Hepatocellular Carcinoma: An Early Career Perspective.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "delivered": false
+    },
+    "42550021": {
+      "title": "Photon-counting CT: An Emerging Tool for Liver Fibrosis Assessment: An Early Career Perspective.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "delivered": false
+    },
+    "42550022": {
+      "title": "Foundation Models Meet Digital Breast Tomosynthesis.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "delivered": false
+    },
+    "42550023": {
+      "title": "How I Do It: Understanding and Leveraging Generative AI for Chest Radiology Reporting.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42550024": {
+      "title": "MRI Characteristics of Ovarian Serous Surface Papillary Borderline Tumor.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42550025": {
+      "title": "Radiologically Relevant Clinical History Summarization with Large Language Models: A Multireader Performance Study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42550026": {
+      "title": "What We Left in the Chart: Rebuilding Clinical Context Using Large Language Models.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "delivered": false
+    },
+    "42550027": {
+      "title": "Comparison of Second-line Hepatic Arterial Infusion Chemotherapy and Tyrosine Kinase Inhibitors in Advanced Hepatocellular Carcinoma.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42550028": {
+      "title": "Photon-counting CT Extracellular Volume Fraction for Liver Fibrosis Assessment: Validation against MR Elastography and Histopathology.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42550029": {
+      "title": "A Vascular Perspective on Osteoarthritis Progression.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "delivered": false
+    },
+    "42550212": {
+      "title": "Neurovascular compression of the left rostral ventrolateral medulla is not associated with arterial hypertension in a population-based MRI study in Germany.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42550213": {
+      "title": "Cost-effectiveness of CT perfusion, low-field MRI, and delayed high-field MRI in emergency department patients with dizziness concerning for stroke.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42550600": {
+      "title": "Prosthetic valve endocarditis due to non-toxigenic Corynebacterium diphtheriae: A case report.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42551953": {
+      "title": "Association of Inner Membrane Visibility on Noncontrast CT With Response to Middle Meningeal Artery Embolization in Chronic Subdural Hematoma.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42551954": {
+      "title": "Enhancement of the parent artery plaque and aneurysm wall is associated with microembolic events after endovascular treatment of unruptured intracranial aneurysms.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42551955": {
+      "title": "Pretreatment Perfusion-Collateral Impairment Identifies Outcome Heterogeneity After Thrombectomy Reperfusion.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42551956": {
+      "title": "Low Conus Position on Fetal MRI with Postnatal Correlation.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42551957": {
+      "title": "CT Perfusion improves Detection and Exclusion of Clinically Relevant Medium or Distal Vessel Occlusions - A Multi-Reader Diagnostic Accuracy Study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42551958": {
+      "title": "Intracranial Vessel Perforation During Mechanical Thrombectomy for Acute Ischemic Stroke: Incidence, Management, and Outcomes - A Systematic Review and Meta-Analysis.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42551959": {
+      "title": "Middle Meningeal Artery Embolization for Chronic Subdural Hematoma in Cancer Patients: A Propensity-Matched Cohort Study of 90-Day Outcomes.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42552491": {
+      "title": "Early vs. late computed tomography angiography in blunt cerebrovascular injuries: a national analysis of clinical outcomes across injury grade and location.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42552492": {
+      "title": "Diagnostic agreement between emergency medicine residents after dedicated appendix ultrasound training and radiologists in the ultrasonographic evaluation of suspected acute appendicitis.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42552646": {
+      "title": "Letter to the editor re: Sathya A, Nguyen TN, Klein P, et al. Endovascular vs surgical treatment of sigmoid sinus diverticulum causing pulsatile tinnitus: A systematic review. Interv Neuroradiol. 2024 Mar 22:15910199241231325.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42552793": {
+      "title": "Factors associated with early hematoma expansion in intracerebral hemorrhage and the value of non-contrast computed tomography imaging features combined with clinical data for early identification.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42553467": {
+      "title": "A New Fluorine-18-Fluoroethyltyrosine Positron-Emission-Tomography/Magnetic-Resonance-Based Tumor Resection Plan Improved the Prognosis of Glioblastoma Patients. A Multicenter Validated Study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42553863": {
+      "title": "Acute middle cerebral artery thrombosis in the early postoperative period after total knee arthroplasty under general anesthesia: A case report.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42553874": {
+      "title": "Predictive simulation of coil mechanics uncovers shape-driven determinants of endovascular coiling efficacy in intracranial aneurysms.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42554836": {
+      "title": "Collateral status and outcomes in ICAS-LVO: insights from the RESCUE-ICAS registry.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42554837": {
+      "title": "Investigation of cerebellar structure and static and dynamic functional connectivity in cervical spondylotic myelopathy patients.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42554838": {
+      "title": "Circumferential wall enhancement is associated with neutrophil-to-lymphocyte ratio in intracranial fusiform aneurysms.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42557018": {
+      "title": "Arterial Spin Labeling-Derived Fractional Tumor Burden as a Primary Biomarker for Differentiating Recurrent Tumor from Radiation Necrosis After Stereotactic Radiosurgery.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42557019": {
+      "title": "Inferior Sagittal Sinus Varix: An Imaging Mimic of Pericallosal Artery Aneurysm.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42557020": {
+      "title": "Performance and Reproducibility of Bone-RADS MRI Algorithm for Vertebral Lesions.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42557264": {
+      "title": "A novel hybrid transformer-based framework (H-ConvNeXt-Swin) to classify brain tumors using MRI.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42557430": {
+      "title": "ESR Bridges: chronic thromboembolic pulmonary hypertension: new developments in imaging and treatment-a multidisciplinary view.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "delivered": false
+    },
+    "42557530": {
+      "title": "Prediction of blunt trauma outcomes with pulmonary contusion quantification.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42558067": {
+      "title": "Colchicine for the Prevention of Vascular Events After an Acute Intracerebral Hemorrhage: A Placebo-Controlled Trial.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42558246": {
+      "title": "Real-world experience with RESCUE BT2 tirofiban protocol versus standard care for select patients with acute ischemic stroke at a United States comprehensive stroke center: a single-center retrospective study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42558811": {
+      "title": "Clinical equipoise and ethical challenges in expanding endovascular stroke thrombectomy practice.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42558919": {
+      "title": "Perfusion-guided thrombolysis beyond 4.5 hours for acute ischemic stroke: A time-stratified systematic review and meta-analysis.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42559300": {
+      "title": "Evaluation of stenosis using magnetic resonance angiography for acute cervical internal carotid artery occlusion initially treated by angioplasty alone: A case series.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42559523": {
+      "title": "Contrast-induced sialadenitis associated with neuroendovascular aneurysm embolization: Two illustrative cases.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42559613": {
+      "title": "Clinical Decision Making: Acute Ischemic Stroke with Large Vessel Occlusion.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42559778": {
+      "title": "Balancing Ischemia and Hemorrhage After Tenecteplase in Wake-Up Stroke.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42559821": {
+      "title": "Temporalis muscle biomarkers from routine brain MRI and risk of dementia in two independent cohorts.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42560382": {
+      "title": "Correction: Diagnostic accuracy of deep learning vs. human raters for detecting osteoporotic vertebral compression fractures in routine CT scans.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "delivered": false
+    },
+    "42560546": {
+      "title": "Telescoping leo+ stents for basilar artery trunk aneurysms: a systematic review of endovascular strategies.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42560675": {
+      "title": "Intravenous Thrombolysis Beyond the Conventional Time Window for Acute Ischemic Stroke: A Systematic Review and Meta-Analysis.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42560947": {
+      "title": "Young-onset stroke in the UAE: A single-centre retrospective analysis of risk factors and outcomes.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42562016": {
+      "title": "Towards a clinically practical computational platform for systematically adapting radiation therapy for glioma patients.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42562635": {
+      "title": "Ankyras simulation for flow diversion of intracranial aneurysms: a standardized workflow integrated clinical validation study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42562636": {
+      "title": "Thunderbolt System for acute ischemic stroke secondary to large vessel occlusion: primary results of the THUNDER study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42562637": {
+      "title": "Copper filtration reduces radiation dose while maintaining image quality in cerebral flat-detector CT.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42564303": {
+      "title": "Case Report: Mechanical thrombectomy of cerebral venous sinuses using the NeVa stent retriever.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42564476": {
+      "title": "Diagnostic Accuracy of MRI-Based Artificial Intelligence Models for Distinguishing Alzheimer's Disease and Mild Cognitive Impairment From Cognitively Normal Controls: A Systematic Review and Meta-Analysis.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42564627": {
+      "title": "GMANet: a CPU-only ultra-lightweight 3D CNN for real-time glioma triage in resource-limited environments.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42564818": {
+      "title": "Cancer-associated stroke: a comparative analysis of thrombus composition, resistance to lysis, and plasma biomarkers.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42565483": {
+      "title": "Diagnostic Accuracy of APTw and NOEw MRI Metrics for IDH Mutation and 1p/19q Codeletion Prediction in Gliomas.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42565565": {
+      "title": "[Factors influencing hemorrhagic transformation after mechanical thrombectomy in patients with acute ischemic stroke patients].",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42565596": {
+      "title": "Longitudinal Stent Malapposition After Microcatheter Removal Is Associated With Incomplete Occlusion After Pipeline Flow Diversion.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42565837": {
+      "title": "Correction: Comparing HCC arterial tumour vascularisation on baseline imaging and after lipiodol cTACE: how do estimations of enhancing tumour volumes differ on contrast-enhanced MR and CT?",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "delivered": false
+    },
+    "42565889": {
+      "title": "Tibial-sided PCL avulsion fractures in children: the importance of diagnosing concomitant injuries.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42565890": {
+      "title": "From order to image: reducing CT order to exam start time through targeted quality improvement in the ED.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42566015": {
+      "title": "Correction to: Angioarchitectural features of hemorrhagic presentation of brain arteriovenous malformations: A multivariate and explainable machine learning study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "delivered": false
+    },
+    "42566118": {
+      "title": "From Recanalization to Failed Recovery: No Reflow, No Rescue, and No Regrow After Thrombectomy.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42566332": {
+      "title": "Safety and Efficacy of Endovascular Thrombectomy for Acute Ischemic Stroke in the Posterior Circulation in Latin American and the Caribbean Patients: A Systematic Review and Meta-analysis.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42566337": {
+      "title": "Smartphone-based Prehospital Stroke Triage Optimizes Workflow and Bridges the Off-hour Delays in Endovascular Thrombectomy.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42566534": {
+      "title": "Deep learning reveals a neurocomputational mechanism predicting depression risk in adolescents.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42566704": {
+      "title": "Early rehabilitation initiation after aneurysmal subarachnoid haemorrhage: evaluation of mortality and functional outcomes.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42567499": {
+      "title": "Lost in Translation: Gaps in Multidimensional Assessment Undermine the Role of Clot Histology in Thrombectomy-An Expert Roadmap and Meta-Analytic Review.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42567544": {
+      "title": "Cerebral large vessel occlusion stroke multiomics biosample cohort (CLOMB): a multicentre cohort protocol.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42567700": {
+      "title": "A first-in-human, prospective feasibility trial of a next-generation, shear-responsive, liquid embolic biomaterial, NeoCast.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42567711": {
+      "title": "A Comparison of Radio-Pathomic, Diffusion, and Perfusion Imaging Features for Identifying Pseudoprogression in Glioblastoma.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42567712": {
+      "title": "Aggressive versus Conventional Antiplatelet Therapy During Emergent Carotid Stenting in Acute Ischemic Stroke: Balancing Occlusion and Hemorrhage.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42567713": {
+      "title": "Dorsal spinal CSF leaks in patients with spontaneous intracranial hypotension: a radiologic-anatomic study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42567920": {
+      "title": "Dysregulated neuroendocrine stress response and blood pressure management burden are linked to remote diffusion-weighted imaging lesions after intracerebral hemorrhage: a prospective pilot study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42568071": {
+      "title": "Sex and Age Differences in Outcomes After Endovascular Thrombectomy of Patients With Acute Ischemic Stroke and Atrial Fibrillation: A Danish Nationwide Study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42568473": {
+      "title": "Prevalence and effects on outcomes of intracranial tumors and structural alterations in children with central precocious puberty and early and fast puberty.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42568575": {
+      "title": "Visuospatial Neglect Caused by Microbleeds in a Patient With Cerebral Amyloid Angiopathy: A Case Report.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42569404": {
+      "title": "SUITPy: A Python-based toolbox for the analysis of cerebellar functional and anatomical imaging data across the human lifespan.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42569793": {
+      "title": "Radiomics Outperforms Conventional Tumor Volume in Prognostic Stratification Across Independent Glioma Cohorts.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42570025": {
+      "title": "Multicentre performance and consistency of two deep learning models for malignancy probability estimation of incidental pulmonary nodules.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42570110": {
+      "title": "Beyond nnU-Net: emerging artificial intelligence directions for automated perivascular space segmentation.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42570111": {
+      "title": "Pituitary neuroendocrine tumors: imaging features, clinical relevance, and a proposal for standardized MRI reporting.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42570146": {
+      "title": "Actin, connexin-43 and GAP-43 expression in gliomas: real-world associations with IDH status, tumor burden and survival.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42570576": {
+      "title": "Apparent diffusion coefficient (ADC) as a single predictor is insufficient to predict cellular density in gliomas.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42571320": {
+      "title": "Artificial Intelligence for the Diagnosis and Management of Neurodegenerative Diseases: A Comprehensive Review With an Emphasis on Parkinson's and Alzheimer's Diseases.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42571390": {
+      "title": "Comparison of the predictive value of intraoperative MRI and intraoperative histopathological examination for diagnostic stereotactic biopsy yield in patients with brain gliomas.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42571485": {
+      "title": "Defining biomaterial-driven design principles for bioabsorbable flow diverters: current state and perspectives.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42571668": {
+      "title": "In Vivo Wide-Field Mapping of Microvascular Dynamics in Orthotopic GL261 Gliomas by Super-Resolution Ultrasound Imaging.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42571956": {
+      "title": "Endovascular therapy versus best medical treatment in pediatric acute ischemic stroke: A systematic review and meta-analysis.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42572031": {
+      "title": "Clinical application of artificial intelligence technology in epilepsy.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42572042": {
+      "title": "Comparison of remimazolam and dexmedetomidine on perioperative hemodynamics, postoperative mood, cognition, and delirium in elderly stroke patients undergoing mechanical thrombectomy: a single-center prospective cohort study.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42572280": {
+      "title": "Preoperative Magnetic Resonance Imaging Findings Associated with Preexisting Basilar Artery Stenosis in Endovascular Revascularization for Basilar Artery Occlusion.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42572592": {
+      "title": "CREST-associated ruptured right MCA aneurysm: A case report and review of the literature.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
+    },
+    "42572594": {
+      "title": "Bilateral internal carotid artery fibromuscular dysplasia identified during acute ischemic stroke evaluation: A case report.",
+      "firstSeen": "2026-08-10T13:16:11.682Z",
+      "relevance": 0,
+      "delivered": false
     }
   },
-  "updatedAt": "2026-08-03T14:47:22.993Z"
+  "updatedAt": "2026-08-10T13:16:11.683Z"
 }
