@@ -186,9 +186,12 @@ The pipeline: **esearch → efetch → prefilter → score → re-rank → selec
 - **User-facing strings are Spanish** (digest text, score reasons, CLI help, the scoring prompt);
   code, identifiers and comments are English.
 - **Dependencies are pinned exactly** (no `^`) in `package.json`; Dependabot proposes the bumps.
-  `pnpm-lock.yaml` is committed and CI installs with `--frozen-lockfile`. pnpm settings, including
-  the `overrides` that keep dev-only advisories at zero, live in `pnpm-workspace.yaml` — pnpm 10+
-  no longer reads them from the `pnpm` key in `package.json`.
+  `pnpm-lock.yaml` is committed and CI installs with `--frozen-lockfile`. pnpm settings live in
+  `pnpm-workspace.yaml` — pnpm 10+ no longer reads them from the `pnpm` key in `package.json`.
+  Reach for a dependency `override` only as a stopgap: three of them once papered over advisories
+  that a held-back major (vitest 3, which pinned vite 5) was dragging in, and all three vanished
+  the moment the major was viable. Prefer fixing the root dependency; check with
+  `pnpm audit --prod`, which is what actually matters for what ships.
 - **Cost is a design constraint.** De-duplicate and prefilter before scoring, cap with
   `maxAbstractsPerRun`/`--limit`, and prefer `--from-cache` when iterating on rendering or
   delivery. Every run reports what it spent, so tuning uses real numbers. Prompt caching is not
