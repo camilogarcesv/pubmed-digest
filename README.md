@@ -208,6 +208,11 @@ npx wrangler secret put VOTES_READ_SECRET         # another long random string
 npx wrangler deploy                        # prints your Worker URL
 ```
 
+The URL is `https://<worker-name>.<your-account-subdomain>.workers.dev` — **both** labels, which
+is easy to mistype from memory. Copy the one `deploy` prints. The account subdomain is set once
+per account and can only be changed from the Cloudflare dashboard (Workers & Pages → *Change*
+next to *Your subdomain*); `wrangler` has no command for it.
+
 Then point Telegram at it (the `secret_token` must equal `TELEGRAM_WEBHOOK_SECRET` — it is how
 the Worker knows a request really came from Telegram):
 

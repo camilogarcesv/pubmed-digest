@@ -42,6 +42,10 @@ export default {
 };
 
 async function handleWebhook(request: Request, env: Env): Promise<Response> {
+  // Refuse to run at all until the secret is configured. `wrangler deploy` has to create the
+  // Worker before `wrangler secret put` can target it, so there is a window on first deploy
+  // where these are undefined; comparing against undefined must never be able to succeed.
+  if (!env.TELEGRAM_WEBHOOK_SECRET) return new Response("not configured", { status: 503 });
   // Telegram echoes back the secret_token registered with setWebhook; anything else is not Telegram.
   if (request.headers.get("x-telegram-bot-api-secret-token") !== env.TELEGRAM_WEBHOOK_SECRET) {
     return new Response("forbidden", { status: 403 });
@@ -88,6 +92,9 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
 }
 
 async function handleVotes(request: Request, env: Env): Promise<Response> {
+  // Without this guard an unset secret would compare against the literal "Bearer undefined",
+  // which a caller could send verbatim. Fail closed instead.
+  if (!env.VOTES_READ_SECRET) return new Response("not configured", { status: 503 });
   if (request.headers.get("authorization") !== `Bearer ${env.VOTES_READ_SECRET}`) {
     return new Response("forbidden", { status: 403 });
   }
