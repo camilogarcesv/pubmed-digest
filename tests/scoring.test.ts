@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
-import { AnthropicScorer, type CreateMessage } from "../src/scoring.js";
+import { AnthropicScorer, ScoringError, type CreateMessage } from "../src/scoring.js";
 import { makePaper as paper, makeProfile } from "./helpers.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -75,7 +75,7 @@ describe("AnthropicScorer", () => {
     expect(bodies).toHaveLength(2); // initial + one reconcile call
   });
 
-  it("assigns a neutral score after a batch fails validation twice", async () => {
+  it("fails instead of assigning artificial zeros after invalid responses", async () => {
     const papers = [paper("1"), paper("2")];
     const { fn, bodies } = queued([
       toolUseMessage([{ pmid: "1", relevance: 15, reason: "fuera de rango" }]), // invalid
@@ -83,14 +83,94 @@ describe("AnthropicScorer", () => {
     ]);
     const scorer = new AnthropicScorer(fn, "m", 10);
 
-    const scored = await scorer.score(papers, { profile });
+    const result = scorer.score(papers, { profile });
 
-    expect(scored).toHaveLength(2);
-    for (const s of scored) {
-      expect(s.relevance).toBe(0);
-      expect(s.reason).toBe("No evaluado por el modelo.");
-    }
-    expect(bodies).toHaveLength(2); // two attempts, no reconcile (first call yielded nothing)
+    await expect(result).rejects.toMatchObject({
+      name: "ScoringError",
+      kind: "invalid_response",
+      pmids: ["1", "2"],
+    });
+    expect(bodies).toHaveLength(2);
+  });
+
+  it("fails when a PMID remains omitted after reconciliation", async () => {
+    const { fn, bodies } = queued([
+      toolUseMessage([{ pmid: "1", relevance: 8, reason: "a" }]),
+      toolUseMessage([]),
+    ]);
+    const scorer = new AnthropicScorer(fn, "m", 10);
+
+    await expect(scorer.score([paper("1"), paper("2")], { profile })).rejects.toMatchObject({
+      kind: "invalid_response",
+      pmids: ["2"],
+    });
+    expect(bodies).toHaveLength(2);
+  });
+
+  it("preserves an explicit valid zero returned by the model", async () => {
+    const { fn } = queued([
+      toolUseMessage([{ pmid: "1", relevance: 0, reason: "No coincide con el perfil." }]),
+    ]);
+    const scorer = new AnthropicScorer(fn, "m", 10);
+
+    const [scored] = await scorer.score([paper("1")], { profile });
+
+    expect(scored).toMatchObject({ relevance: 0, reason: "No coincide con el perfil." });
+  });
+
+  it("does not retry a workspace spend-limit failure", async () => {
+    let calls = 0;
+    const fn: CreateMessage = async () => {
+      calls++;
+      throw Object.assign(new Error("Your credit balance is too low"), {
+        status: 400,
+      });
+    };
+    const scorer = new AnthropicScorer(fn, "m", 10);
+
+    const result = scorer.score([paper("1")], { profile });
+
+    await expect(result).rejects.toBeInstanceOf(ScoringError);
+    await expect(result).rejects.toMatchObject({ kind: "budget_exceeded", pmids: ["1"] });
+    expect(calls).toBe(1);
+  });
+
+  it("retries a transient API failure once and then fails the whole score operation", async () => {
+    let calls = 0;
+    const delays: number[] = [];
+    const fn: CreateMessage = async () => {
+      calls++;
+      throw Object.assign(new Error("service unavailable"), {
+        status: 503,
+        headers: { get: () => "Wed, 21 Oct 2099 07:28:00 GMT" },
+      });
+    };
+    const scorer = new AnthropicScorer(fn, "m", 10, async (ms) => { delays.push(ms); });
+
+    await expect(scorer.score([paper("1")], { profile })).rejects.toMatchObject({
+      kind: "transient_api",
+    });
+    expect(calls).toBe(2);
+    expect(delays).toEqual([30_000]);
+  });
+
+  it("rejects the whole operation when a later batch fails after an earlier success", async () => {
+    let calls = 0;
+    const fn: CreateMessage = async () => {
+      calls++;
+      if (calls === 1) {
+        return toolUseMessage([{ pmid: "1", relevance: 8, reason: "válido" }]);
+      }
+      throw Object.assign(new Error("service unavailable"), { status: 503 });
+    };
+    const scorer = new AnthropicScorer(fn, "m", 1, async () => undefined);
+
+    await expect(scorer.score([paper("1"), paper("2")], { profile })).rejects.toMatchObject({
+      kind: "transient_api",
+      pmids: ["2"],
+    });
+    expect(calls).toBe(3);
+    expect(scorer.usage.calls).toBe(1);
   });
 
   it("accumulates token usage across calls for the run report", async () => {

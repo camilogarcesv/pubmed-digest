@@ -25,7 +25,8 @@ interfaces so they can be swapped later.
 
 Scoring uses a **forced tool call** (`submit_scores`) on `claude-haiku-4-5`. The tool output is
 validated with zod and reconciled against the batch that was sent (omitted PMIDs are re-scored;
-hallucinated PMIDs are dropped), so a paper is never silently lost.
+hallucinated PMIDs are dropped). A valid score of `0` is preserved, but an API failure, malformed
+response or PMID still missing after reconciliation aborts the run before delivery or state write.
 
 **Two passes, not one.** After the batch scoring, the best `rerankTopK` papers are re-scored
 together in a single call. An absolute 0–10 score drifts between batches; comparing the finalists
@@ -71,6 +72,8 @@ the state ledger).
 
 ```bash
 pnpm typecheck   # tsc --noEmit
+pnpm typecheck:worker
+pnpm check:worker-types
 pnpm test        # vitest (offline; no live network)
 ```
 
@@ -185,9 +188,9 @@ The votes do two things:
 - **They tune the next digest automatically.** The most recent likes and dislikes are injected
   into the scoring prompt as few-shot exemplars — what the reader *actually* voted for beats what
   the profile *says* they want. Titles come from the ledger, so this costs no extra requests.
-- **They make tuning measurable.** `pnpm eval` reports precision@k, the average score of liked vs
-  disliked papers, and the **disagreements** — liked papers the model scored low, disliked ones it
-  scored high. That list is the to-do for `profile.yaml`.
+- **They make tuning measurable.** `pnpm eval` always reports descriptive averages and
+  **disagreements**. It reports `precision@k` only after at least 15 unique joined votes include
+  examples of both 👍 and 👎; before that its status is explicitly `insufficient_data`.
 
 ```bash
 pnpm eval                          # votes from the Worker, scores from the ledger + cache
@@ -201,12 +204,18 @@ pnpm eval -- --rescore             # re-score the voted papers with the CURRENT 
 ```bash
 cd worker
 npx wrangler login
-npx wrangler kv namespace create VOTES     # paste the printed id into wrangler.toml
+npx wrangler kv namespace create VOTES     # paste the printed id into wrangler.jsonc
 npx wrangler secret put TELEGRAM_BOT_TOKEN
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET   # any long random string
 npx wrangler secret put VOTES_READ_SECRET         # another long random string
 npx wrangler deploy                        # prints your Worker URL
 ```
+
+From the repository root, regenerate bindings with `pnpm types:worker` whenever
+`worker/wrangler.jsonc` changes. CI runs `pnpm check:worker-types`, the Worker typecheck and its
+offline request tests. Workers Logs are enabled with structured events and full log sampling;
+query strings are redacted. Traces remain disabled because Telegram's Bot API includes the bot
+token in the request path.
 
 The URL is `https://<worker-name>.<your-account-subdomain>.workers.dev` — **both** labels, which
 is easy to mistype from memory. Copy the one `deploy` prints. The account subdomain is set once
@@ -246,9 +255,38 @@ only the delivered ones — so papers that scored below threshold aren't re-fetc
 every week. Set it to `"delivered"` for strict "only what was sent" semantics. `search` never
 touches state.
 
+### Repairing contaminated zero scores
+
+The repair command is read-only by default. Its initial default window is the UTC day
+`2026-08-31` (`--from` inclusive, `--to` exclusive), and it selects only entries with an explicit
+`relevance: 0` and `delivered: false`:
+
+```bash
+pnpm state:repair -- --input state.json
+pnpm state:repair -- --input state.json --from 2026-08-31 --to 2026-09-01
+```
+
+Review the sorted PMID report first. Applying is a separate explicit action:
+
+```bash
+pnpm state:repair -- --input state.json --from 2026-08-31 --to 2026-09-01 --apply
+```
+
+Before replacing the local file atomically, apply mode writes an exact `.bak` and a JSON report to
+`.cache/state-repair/`. The tool never checks out, commits or pushes the `state` branch. Updating
+that branch remains a separate operator action after verifying the backup and report.
+
 ---
 
 ## Cost note
+
+Create a dedicated [Anthropic Workspace](https://platform.claude.com/docs/en/manage-claude/workspaces)
+for this pilot, set its monthly spend limit to **USD 5** in the Anthropic Console, and use an API
+key created inside that workspace. The default workspace does not provide the same isolation. The
+application intentionally keeps `maxAbstractsPerRun` and its
+per-run token/cost report instead of adding a second monthly accounting system. When Anthropic
+reports that the workspace spend limit was reached, scoring raises `budget_exceeded` immediately
+and does not retry.
 
 `claude-haiku-4-5` is **$1.00 / $5.00 per 1M input/output tokens**. A scoring call of ~18 abstracts
 is on the order of a couple of cents; a weekly digest across the configured journals is typically a

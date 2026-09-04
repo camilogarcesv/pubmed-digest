@@ -15,6 +15,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "typecheck:worker": "tsc -p worker/tsconfig.json",
+    "types:worker": "wrangler types worker/worker-configuration.d.ts --config worker/wrangler.jsonc",
+    "check:worker-types": "wrangler types worker/worker-configuration.d.ts --config worker/wrangler.jsonc --check",
+    "state:repair": "tsx src/repair-state.ts",
     "eval": "tsx src/eval.ts"
   },
   "dependencies": {
@@ -24,10 +27,10 @@
     "zod": "4.5.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260828.1",
     "@types/node": "26.4.0",
     "tsx": "4.23.12",
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "wrangler": "4.128.0"
   }
 }

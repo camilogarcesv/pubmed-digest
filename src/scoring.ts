@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Paper, ScoredPaper } from "./types.js";
 import type { Profile } from "./profile.js";
 import { logger } from "./logger.js";
-import { chunk } from "./util.js";
+import { chunk, sleep } from "./util.js";
 
 export const SCORE_TOOL_NAME = "submit_scores";
 
@@ -66,7 +66,29 @@ export interface ScoreContext {
   exemplars?: { liked: string[]; disliked: string[] };
 }
 
-const NEUTRAL_REASON = "No evaluado por el modelo.";
+export type ScoringFailureKind =
+  | "budget_exceeded"
+  | "transient_api"
+  | "permanent_api"
+  | "invalid_response";
+
+/** A typed, operationally actionable scoring failure. No synthetic scores are produced. */
+export class ScoringError extends Error {
+  override readonly name = "ScoringError";
+
+  constructor(
+    readonly kind: ScoringFailureKind,
+    readonly pmids: string[],
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
+}
+
+class InvalidScoringResponseError extends Error {
+  override readonly name = "InvalidScoringResponseError";
+}
 
 export function buildSystemPrompt(ctx: ScoreContext): string {
   const { profile, topic, rerank } = ctx;
@@ -196,6 +218,7 @@ export class AnthropicScorer implements Scorer {
     private readonly createMessage: CreateMessage,
     private readonly model: string,
     private readonly batchSize: number,
+    private readonly retryDelay: (ms: number) => Promise<void> = sleep,
   ) {}
 
   async score(papers: Paper[], ctx: ScoreContext): Promise<ScoredPaper[]> {
@@ -222,7 +245,7 @@ export class AnthropicScorer implements Scorer {
     return papers.map((p) => byPmid.get(p.pmid) ?? p);
   }
 
-  /** Always returns a map covering every pmid in the batch (missing ones get a neutral score). */
+  /** Returns every requested PMID or throws. Partial output must never look like relevance 0. */
   private async scoreBatchWithReconcile(
     batch: Paper[],
     ctx: ScoreContext,
@@ -230,54 +253,70 @@ export class AnthropicScorer implements Scorer {
     const wanted = new Set(batch.map((p) => p.pmid));
     const result = new Map<string, { relevance: number; reason: string }>();
 
-    const first = await this.callBatchSafe(batch, ctx);
-    if (first) {
-      for (const s of first) {
-        if (!wanted.has(s.pmid)) {
-          logger.warn("scorer returned a pmid we did not send, dropping", { pmid: s.pmid });
+    const first = await this.callBatchWithRetry(batch, ctx);
+    for (const s of first) {
+      if (!wanted.has(s.pmid)) {
+        logger.warn("scorer returned a pmid we did not send, dropping", { pmid: s.pmid });
+        continue;
+      }
+      result.set(s.pmid, { relevance: s.relevance, reason: s.reason });
+    }
+
+    // Reconcile an incomplete but otherwise valid response once, using only the omitted papers.
+    const missing = batch.filter((p) => !result.has(p.pmid));
+    if (missing.length > 0) {
+      logger.warn("re-scoring pmids missing from model output", {
+        count: missing.length,
+        pmids: missing.map((p) => p.pmid),
+      });
+      const missingSet = new Set(missing.map((p) => p.pmid));
+      const reconciled = await this.callBatchWithRetry(missing, ctx);
+      for (const s of reconciled) {
+        if (!missingSet.has(s.pmid)) {
+          logger.warn("scorer returned a pmid outside the reconciliation set, dropping", {
+            pmid: s.pmid,
+          });
           continue;
         }
         result.set(s.pmid, { relevance: s.relevance, reason: s.reason });
       }
     }
 
-    // Reconcile: re-score any pmids the model omitted (once), but only if the first call succeeded.
-    const missing = batch.filter((p) => !result.has(p.pmid));
-    if (missing.length > 0 && first !== null) {
-      logger.warn("re-scoring pmids missing from model output", {
-        count: missing.length,
-        pmids: missing.map((p) => p.pmid),
-      });
-      const missingSet = new Set(missing.map((p) => p.pmid));
-      const retry = await this.callBatchSafe(missing, ctx);
-      if (retry) {
-        for (const s of retry) {
-          if (missingSet.has(s.pmid)) result.set(s.pmid, { relevance: s.relevance, reason: s.reason });
-        }
-      }
-    }
-
-    // Anything still unscored gets a neutral, below-threshold score so it is never silently dropped.
-    for (const p of batch) {
-      if (!result.has(p.pmid)) {
-        logger.warn("assigning neutral score to unscored paper", { pmid: p.pmid });
-        result.set(p.pmid, { relevance: 0, reason: NEUTRAL_REASON });
-      }
+    const stillMissing = batch.filter((p) => !result.has(p.pmid)).map((p) => p.pmid);
+    if (stillMissing.length > 0) {
+      throw new ScoringError(
+        "invalid_response",
+        stillMissing,
+        `Anthropic omitted ${stillMissing.length} PMID(s) after reconciliation: ${stillMissing.join(", ")}`,
+      );
     }
     return result;
   }
 
-  /** One scoring call with a single retry on parse/validation/API failure; null if both fail. */
-  private async callBatchSafe(batch: Paper[], ctx: ScoreContext): Promise<RawScore[] | null> {
+  /** One scoring call plus at most one retry for transient API or invalid-response failures. */
+  private async callBatchWithRetry(batch: Paper[], ctx: ScoreContext): Promise<RawScore[]> {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         return await this.callBatch(batch, ctx);
       } catch (err) {
-        logger.warn("scoring batch attempt failed", { attempt, error: String(err) });
+        const failure = toScoringError(err, batch.map((p) => p.pmid));
+        const willRetry = attempt === 0 && isRetryable(failure.kind);
+        logger[willRetry ? "warn" : "error"]("scoring batch attempt failed", {
+          attempt: attempt + 1,
+          kind: failure.kind,
+          willRetry,
+          pmids: failure.pmids,
+          error: failure.message,
+        });
+        if (!willRetry) throw failure;
+        if (failure.kind === "transient_api") await this.retryDelay(retryDelayMs(err));
       }
     }
-    logger.error("scoring batch skipped after retry", { pmids: batch.map((p) => p.pmid) });
-    return null;
+    throw new ScoringError(
+      "transient_api",
+      batch.map((p) => p.pmid),
+      "Scoring retry loop ended unexpectedly.",
+    );
   }
 
   private async callBatch(batch: Paper[], ctx: ScoreContext): Promise<RawScore[]> {
@@ -297,16 +336,82 @@ export class AnthropicScorer implements Scorer {
 
     const block = res.content.find((b) => b.type === "tool_use");
     if (!block || block.type !== "tool_use") {
-      throw new Error(
+      throw new InvalidScoringResponseError(
         `Expected a ${SCORE_TOOL_NAME} tool_use block, got stop_reason=${res.stop_reason}`,
       );
     }
     const parsed = SubmitScoresSchema.safeParse(block.input);
     if (!parsed.success) {
-      throw new Error(`submit_scores output failed validation: ${parsed.error.message}`);
+      throw new InvalidScoringResponseError(
+        `submit_scores output failed validation: ${parsed.error.message}`,
+      );
     }
     return parsed.data.scores;
   }
+}
+
+function isRetryable(kind: ScoringFailureKind): boolean {
+  return kind === "transient_api" || kind === "invalid_response";
+}
+
+function toScoringError(err: unknown, pmids: string[]): ScoringError {
+  if (err instanceof ScoringError) return err;
+  const kind = classifyScoringFailure(err);
+  const message = err instanceof Error ? err.message : String(err);
+  return new ScoringError(kind, pmids, `Scoring failed (${kind}): ${message}`, {
+    cause: err,
+  });
+}
+
+function classifyScoringFailure(err: unknown): ScoringFailureKind {
+  if (err instanceof InvalidScoringResponseError) return "invalid_response";
+
+  const record = typeof err === "object" && err !== null ? err as Record<string, unknown> : {};
+  const status = typeof record.status === "number" ? record.status : undefined;
+  let details = "";
+  try {
+    details = JSON.stringify(record.error ?? "");
+  } catch {
+    // A malformed error body should not hide the original failure classification.
+  }
+  const message = `${err instanceof Error ? err.message : String(err)} ${details}`.toLowerCase();
+  if (
+    message.includes("enforced_spend_limit_reached") ||
+    message.includes("specified api usage limits") ||
+    message.includes("workspace api usage limit") ||
+    message.includes("spend limit") ||
+    message.includes("credit balance is too low") ||
+    message.includes("billing_error")
+  ) {
+    return "budget_exceeded";
+  }
+  if (status === undefined || status === 408 || status === 409 || status === 429 || status >= 500) {
+    return "transient_api";
+  }
+  return "permanent_api";
+}
+
+function retryDelayMs(err: unknown): number {
+  const record = typeof err === "object" && err !== null ? err as Record<string, unknown> : {};
+  const headers = record.headers;
+  let retryAfter: string | null | undefined;
+  if (typeof headers === "object" && headers !== null) {
+    const get = (headers as { get?: unknown }).get;
+    if (typeof get === "function") {
+      retryAfter = String(get.call(headers, "retry-after") ?? "");
+    } else {
+      const value = (headers as Record<string, unknown>)["retry-after"];
+      if (typeof value === "string") retryAfter = value;
+    }
+  }
+  const normalized = retryAfter?.trim();
+  if (normalized) {
+    const seconds = Number(normalized);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, 30_000);
+    const at = Date.parse(normalized);
+    if (Number.isFinite(at)) return Math.min(Math.max(0, at - Date.now()), 30_000);
+  }
+  return 1_000;
 }
 
 export function makeAnthropicScorer(
@@ -314,6 +419,8 @@ export function makeAnthropicScorer(
   model: string,
   batchSize: number,
 ): AnthropicScorer {
-  const client = new Anthropic({ apiKey });
+  // Centralize retry policy here so spend-limit and permanent failures cannot be retried by
+  // both the SDK and this scorer. Transient failures receive exactly one controlled retry.
+  const client = new Anthropic({ apiKey, maxRetries: 0 });
   return new AnthropicScorer((body) => client.messages.create(body), model, batchSize);
 }

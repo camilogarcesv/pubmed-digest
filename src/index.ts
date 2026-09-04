@@ -230,6 +230,8 @@ function recordUsage(deps: PipelineDeps): void {
 
 /** Always emit the run report, including when the run failed part-way through. */
 function reportRun(deps: PipelineDeps, title: string): void {
+  // Also covers failures in the direct --rescore paths, where control never reaches recordUsage.
+  recordUsage(deps);
   logger.info("run summary", deps.metrics.toFields(deps.cfg.pricing));
   writeStepSummary(deps.metrics.toMarkdown(deps.cfg.pricing, title));
 }

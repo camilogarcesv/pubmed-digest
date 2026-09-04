@@ -1,0 +1,20 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "pubmed-digest-votes",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-03",
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    }
+  },
+  "kv_namespaces": [
+    {
+      "binding": "VOTES",
+      "id": "65a1d87e8d3240d895f8b998b31ba197"
+    }
+  ]
+}
