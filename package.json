@@ -18,16 +18,16 @@
     "eval": "tsx src/eval.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.116.0",
-    "fast-xml-parser": "5.10.1",
+    "@anthropic-ai/sdk": "0.122.0",
+    "fast-xml-parser": "5.11.1",
     "yaml": "2.9.0",
-    "zod": "4.4.3"
+    "zod": "4.5.1"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260807.2",
-    "@types/node": "26.2.0",
-    "tsx": "4.23.11",
+    "@cloudflare/workers-types": "5.20260828.1",
+    "@types/node": "26.4.0",
+    "tsx": "4.23.12",
     "typescript": "7.0.2",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }
