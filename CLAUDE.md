@@ -8,8 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pnpm install                                        # install deps
 pnpm typecheck                                       # tsc --noEmit (src + tests)
 pnpm typecheck:worker                                 # tsc for worker/ (Workers runtime types)
+pnpm types:worker                                     # regenerate bindings after wrangler.jsonc changes
+pnpm check:worker-types                               # fail if generated bindings are stale
 pnpm test                                             # vitest run (offline, no network)
 pnpm eval -- --votes dump.json                        # measure the ranking against 👍/👎 votes
+pnpm state:repair -- --input state.json               # dry-run Aug 31 zero-score repair
 pnpm exec vitest run tests/pubmed.test.ts             # run a single test file
 pnpm exec vitest run -t "reconciles"                  # run tests matching a name pattern
 pnpm build                                            # tsc emit to dist/
@@ -61,6 +64,7 @@ The pipeline: **esearch → efetch → prefilter → score → re-rank → selec
 | `src/digest.ts` | Selection (threshold + cap + floor) and Telegram-HTML rendering (pure) |
 | `src/deliver.ts` | `Deliverer` interface: Telegram, console, multi-recipient fan-out |
 | `src/state.ts` | `SeenStore` interface: JSON-file and in-memory stores |
+| `src/state-repair.ts` | Pure, date-bounded zero-score repair with backup/report apply mode |
 | `src/metrics.ts` | Run counters, token usage, estimated cost, job summary |
 | `src/cache.ts` | Run snapshots for `--save-cache` / `--from-cache` / `--rescore` |
 | `src/recipients.ts` | Named-recipient registry and `--to` selection |
@@ -91,8 +95,10 @@ The pipeline: **esearch → efetch → prefilter → score → re-rank → selec
   rejects `minimum`/`maximum`, so range validation (0–10) is done by the zod schema instead.
   `AnthropicScorer.score()` batches papers (`config.batchSize`) and **reconciles** each batch's
   output against the PMIDs actually sent: PMIDs the model invents are dropped, PMIDs it omits are
-  re-scored once, and anything still unscored after that gets a neutral fallback score rather than
-  being silently lost. `search` and `digest` share this scorer but pass a different `ScoreContext`
+  re-scored once. A valid explicit zero is retained; any API/validation failure or PMID still
+  missing after reconciliation throws `ScoringError`, so the pipeline cannot deliver or persist a
+  partial score set. Spend-limit and permanent failures are not retried; transient and invalid
+  responses get one controlled retry. `search` and `digest` share this scorer but pass a different `ScoreContext`
   (`search` sets `topic`, which the system prompt in `buildSystemPrompt` makes the primary ranking
   criterion instead of the profile).
 
@@ -130,6 +136,8 @@ The pipeline: **esearch → efetch → prefilter → score → re-rank → selec
   exposes them at `GET /votes` behind a bearer token. `src/votes.ts` reads that endpoint, joins
   votes to the ledger (votes carry only a PMID — the title and score come from `state.json`), and
   produces both the **dynamic exemplars** fed to `buildSystemPrompt` and the **eval metrics**.
+  Eval remains `insufficient_data` until there are at least 15 unique joined votes from both
+  classes; `precision@k` is deliberately absent before that point.
   Votes are always enrichment, never a dependency: if the Worker is down the digest still runs.
 
 - **`src/state.ts`** / **`src/deliver.ts`** — both define a narrow interface
@@ -148,6 +156,10 @@ The pipeline: **esearch → efetch → prefilter → score → re-rank → selec
   format is migrated on load (inheriting the file's `updatedAt` so pruning sees the true age).
   The extra metadata is not decoration — a vote carries only a PMID, so without the stored title
   neither eval nor the dynamic exemplars could name the paper.
+
+  `src/state-repair.ts` removes only undelivered explicit-zero entries within a half-open UTC date
+  window. Dry-run writes nothing. Apply writes an exact backup and JSON report before atomically
+  replacing the local file, and deliberately performs no git operations.
 
 - **`src/pipeline.ts`** orchestrates: `digest` de-dupes PMIDs across all sources *and* against
   `state.json` before scoring anything (so a paper matching two sources, or already seen, is never
@@ -234,5 +246,6 @@ URL once cost days of guessing at a broken digest. The run's stdout/stderr is te
 real APIs and real secrets, no delivery and no state write. A break introduced during the week
 surfaces two days before the digest that would otherwise have been lost.
 
-`ci.yml` runs typecheck + tests on every PR and push to main. Note it is fully offline, so it
+`ci.yml` runs Node and Worker typechecks, verifies Wrangler-generated bindings, and runs tests on
+every PR and push to main. Note it is fully offline, so it
 cannot catch a runtime failure that only appears with real credentials — that's the canary's job.

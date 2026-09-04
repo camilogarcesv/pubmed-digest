@@ -119,7 +119,17 @@ function renderReport(m: EvalMetrics, threshold: number, unjoined: number): stri
         ? `    separación ${fmt(m.likedAvg - m.dislikedAvg)}`
         : ""),
   );
-  lines.push(`precision@${m.k}: ${fmt(m.precisionAtK, 2)} (umbral ${threshold})`);
+  if (m.status === "ready") {
+    lines.push(`precision@${m.k}: ${fmt(m.precisionAtK, 2)} (umbral ${threshold})`);
+  } else {
+    const missing = Math.max(0, m.minimumVotes - m.joined);
+    const reasons = [
+      missing > 0 ? `faltan ${missing} votos únicos con score` : undefined,
+      !m.hasBothClasses ? "se necesitan ejemplos de 👍 y 👎" : undefined,
+    ].filter(Boolean);
+    lines.push(`Estado: insufficient_data — ${reasons.join("; ")}.`);
+    lines.push("precision@k se omite hasta que la muestra cumpla ambos criterios.");
+  }
 
   if (m.disagreements.length > 0) {
     lines.push("");
@@ -141,9 +151,12 @@ function renderComparison(before: EvalMetrics, after: EvalMetrics): string {
     m.likedAvg !== undefined && m.dislikedAvg !== undefined
       ? m.likedAvg - m.dislikedAvg
       : undefined;
+  const precision = after.status === "ready"
+    ? `precision@${after.k}: ${fmt(after.precisionAtK, 2)}${delta(after.precisionAtK, before.precisionAtK)}\n`
+    : "Estado: insufficient_data — no se compara precision@k.\n";
   return (
     "\n--rescore con el perfil actual:\n" +
-    `precision@${after.k}: ${fmt(after.precisionAtK, 2)}${delta(after.precisionAtK, before.precisionAtK)}\n` +
+    precision +
     `separación 👍/👎: ${fmt(sep(after))}${delta(sep(after), sep(before))}\n` +
     `desacuerdos: ${after.disagreements.length} (antes ${before.disagreements.length})\n`
   );

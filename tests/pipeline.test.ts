@@ -41,6 +41,23 @@ class FakeScorer implements Scorer {
   }
 }
 
+class FailingLaterBatchScorer implements Scorer {
+  readonly usage: ScorerUsage = { calls: 2, inputTokens: 100, outputTokens: 20 };
+  async score(): Promise<ScoredPaper[]> {
+    throw new Error("second scoring batch failed");
+  }
+  async rerank(papers: ScoredPaper[]): Promise<ScoredPaper[]> {
+    return papers;
+  }
+}
+
+class TrackingStore extends MemoryStore {
+  saves = 0;
+  override async save(): Promise<void> {
+    this.saves++;
+  }
+}
+
 /** esearch returns the ids it was configured with; efetch returns a paper per id. */
 class FakeFetcher implements PaperFetcher {
   constructor(
@@ -201,6 +218,24 @@ describe("runDigestPipeline", () => {
 
     expect(store.size()).toBe(0);
     expect(deps.deliverer.sent).toHaveLength(1);
+  });
+
+  it("does not deliver or persist when scoring fails", async () => {
+    const deps = makeDeps({ scorer: new FailingLaterBatchScorer() });
+    const store = new TrackingStore();
+    store.record([
+      { pmid: "existing", title: "Already there", firstSeen: "2026-08-01", delivered: true },
+    ]);
+
+    await expect(runDigestPipeline(deps, { ...OPTS, store })).rejects.toThrow(
+      "second scoring batch failed",
+    );
+
+    expect(deps.deliverer.sent).toHaveLength(0);
+    expect(store.entries()).toHaveLength(1);
+    expect(store.get("existing")).toBeDefined();
+    expect(store.saves).toBe(0);
+    expect(deps.metrics).toMatchObject({ calls: 2, inputTokens: 100, outputTokens: 20 });
   });
 
   it("records only delivered papers under markSeenMode 'delivered'", async () => {

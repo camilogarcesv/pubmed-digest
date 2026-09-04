@@ -35,13 +35,15 @@ const EntrySchema = z.object({
   firstSeen: z.string(),
   relevance: z.number().int().min(0).max(10).optional(),
   delivered: z.boolean().default(false),
-});
+}).passthrough();
 
-const StateV2Schema = z.object({
+export const StateV2Schema = z.object({
   version: z.literal(2),
   papers: z.record(z.string(), EntrySchema),
   updatedAt: z.string().optional(),
-});
+}).passthrough();
+
+export type StateV2 = z.infer<typeof StateV2Schema>;
 
 /** The original format: a bare PMID list. Still accepted on read, migrated on the fly. */
 const StateV1Schema = z.object({
@@ -80,7 +82,7 @@ export class JsonFileStore implements SeenStore {
     const v2 = StateV2Schema.safeParse(data);
     if (v2.success) {
       for (const [pmid, e] of Object.entries(v2.data.papers)) {
-        this.papers.set(pmid, { pmid, ...e });
+        this.papers.set(pmid, { ...e, pmid });
       }
       return;
     }

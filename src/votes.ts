@@ -53,6 +53,9 @@ export interface JoinedVote {
 }
 
 export interface EvalMetrics {
+  status: "insufficient_data" | "ready";
+  minimumVotes: number;
+  hasBothClasses: boolean;
   votes: number;
   joined: number;
   liked: number;
@@ -94,6 +97,7 @@ export function computeEvalMetrics(
   joined: JoinedVote[],
   threshold: number,
   k = 10,
+  minimumVotes = 15,
 ): EvalMetrics {
   const liked = joined.filter((j) => j.value === 1);
   const disliked = joined.filter((j) => j.value === 0);
@@ -102,7 +106,12 @@ export function computeEvalMetrics(
 
   const kEff = Math.min(k, joined.length);
   const topK = [...joined].sort((a, b) => b.score - a.score).slice(0, kEff);
-  const precisionAtK = kEff > 0 ? topK.filter((j) => j.value === 1).length / kEff : undefined;
+  const hasBothClasses = liked.length > 0 && disliked.length > 0;
+  const status = joined.length >= minimumVotes && hasBothClasses ? "ready" : "insufficient_data";
+  const precisionAtK =
+    status === "ready" && kEff > 0
+      ? topK.filter((j) => j.value === 1).length / kEff
+      : undefined;
 
   // A liked paper the model scored below the bar, or a disliked one it scored clearly above.
   const disagreements = joined
@@ -110,6 +119,9 @@ export function computeEvalMetrics(
     .sort((a, b) => Math.abs(b.score - threshold) - Math.abs(a.score - threshold));
 
   return {
+    status,
+    minimumVotes,
+    hasBothClasses,
     votes: joined.length,
     joined: joined.length,
     liked: liked.length,

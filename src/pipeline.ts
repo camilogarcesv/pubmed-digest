@@ -143,14 +143,17 @@ async function scoreAndRerank(
     logger.info("dropped papers without abstract", { dropped: papers.length - toScore.length });
   }
 
-  const scored = await scorer.score(toScore, { profile, topic, exemplars });
-  metrics.scored += scored.length;
-
-  const refined = await rerankFinalists(deps, scored, topic, exemplars);
-  metrics.calls = scorer.usage.calls;
-  metrics.inputTokens = scorer.usage.inputTokens;
-  metrics.outputTokens = scorer.usage.outputTokens;
-  return refined;
+  try {
+    const scored = await scorer.score(toScore, { profile, topic, exemplars });
+    metrics.scored += scored.length;
+    return await rerankFinalists(deps, scored, topic, exemplars);
+  } finally {
+    // Successful API responses can incur cost before a later batch or rerank fails. Always copy
+    // scorer usage so the failure summary reports what this run actually consumed.
+    metrics.calls = scorer.usage.calls;
+    metrics.inputTokens = scorer.usage.inputTokens;
+    metrics.outputTokens = scorer.usage.outputTokens;
+  }
 }
 
 async function rerankFinalists(

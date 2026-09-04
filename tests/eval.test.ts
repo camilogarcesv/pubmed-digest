@@ -39,8 +39,9 @@ describe("computeEvalMetrics", () => {
       { pmid: "3", title: "c", value: 0 as const, score: 3 },
       { pmid: "4", title: "d", value: 0 as const, score: 8 }, // false positive
     ];
-    const m = computeEvalMetrics(joined, 7, 3);
+    const m = computeEvalMetrics(joined, 7, 3, 4);
 
+    expect(m.status).toBe("ready");
     expect(m.liked).toBe(2);
     expect(m.disliked).toBe(2);
     expect(m.likedAvg).toBe(8.5);
@@ -63,12 +64,38 @@ describe("computeEvalMetrics", () => {
 
   it("handles an all-liked vote set without NaN", () => {
     const m = computeEvalMetrics([{ pmid: "1", title: "a", value: 1, score: 9 }], 7);
+    expect(m.status).toBe("insufficient_data");
+    expect(m.hasBothClasses).toBe(false);
     expect(m.dislikedAvg).toBeUndefined();
-    expect(m.precisionAtK).toBe(1);
+    expect(m.precisionAtK).toBeUndefined();
+  });
+
+  it("reports insufficient_data below 15 unique votes even with both classes", () => {
+    const joined = Array.from({ length: 14 }, (_, i) => ({
+      pmid: String(i),
+      title: String(i),
+      value: (i % 2) as 0 | 1,
+      score: i % 11,
+    }));
+
+    const m = computeEvalMetrics(joined, 7);
+
+    expect(m.status).toBe("insufficient_data");
+    expect(m.minimumVotes).toBe(15);
+    expect(m.hasBothClasses).toBe(true);
+    expect(m.precisionAtK).toBeUndefined();
+  });
+
+  it("reports insufficient_data with 15 votes when only one class exists", () => {
+    const joined = Array.from({ length: 15 }, (_, i) => ({
+      pmid: String(i), title: String(i), value: 1 as const, score: 9,
+    }));
+    expect(computeEvalMetrics(joined, 7).status).toBe("insufficient_data");
   });
 
   it("handles the empty case", () => {
     const m = computeEvalMetrics([], 7);
+    expect(m.status).toBe("insufficient_data");
     expect(m.precisionAtK).toBeUndefined();
     expect(m.disagreements).toEqual([]);
   });
