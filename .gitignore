@@ -11,3 +11,7 @@ dist/
 # Local run state is developer-specific; the GitHub Action commits its own copy.
 # See README (State & dedupe) for the trade-off.
 /state.json
+.wrangler/
+.dev.vars
+.dev.vars.*
+/.local/
