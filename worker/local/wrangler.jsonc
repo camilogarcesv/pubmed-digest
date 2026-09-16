@@ -1,0 +1,16 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "pubmed-digest-local-foundation",
+  "main": "../multiuser/worker.ts",
+  "compatibility_date": "2026-09-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "observability": { "enabled": true, "logs": { "enabled": true, "head_sampling_rate": 1 } },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "pubmed-digest-local",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "remote": false,
+    "migrations_dir": "../migrations"
+  }]
+}

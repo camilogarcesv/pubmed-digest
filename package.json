@@ -15,6 +15,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "typecheck:worker": "tsc -p worker/tsconfig.json",
+    "typecheck:backend": "tsc -p worker/local/tsconfig.json && tsc -p worker/tests/tsconfig.json",
+    "test:worker": "vitest run --config vitest.worker.config.ts",
+    "lint": "eslint src tests worker",
+    "types:backend": "wrangler types worker/local/worker-configuration.d.ts --config worker/local/wrangler.jsonc --env-interface LocalEnv",
+    "check:backend-types": "wrangler types worker/local/worker-configuration.d.ts --config worker/local/wrangler.jsonc --env-interface LocalEnv --check",
+    "db:migrate:local": "wrangler d1 migrations apply pubmed-digest-local --local --config worker/local/wrangler.jsonc",
     "types:worker": "wrangler types worker/worker-configuration.d.ts --config worker/wrangler.jsonc",
     "check:worker-types": "wrangler types worker/worker-configuration.d.ts --config worker/wrangler.jsonc --check",
     "state:repair": "tsx src/repair-state.ts",
@@ -27,9 +33,12 @@
     "zod": "4.5.1"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.1.9",
     "@types/node": "26.4.0",
+    "eslint": "10.10.0",
     "tsx": "4.23.12",
-    "typescript": "7.0.2",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.0",
     "vitest": "4.1.11",
     "wrangler": "4.128.0"
   }
