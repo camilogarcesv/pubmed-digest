@@ -4,11 +4,13 @@
 // Bindings are generated from wrangler.jsonc; secrets intentionally remain runtime-only.
 
 import { confirmedKeyboard, parseCallback, voteAck, voteKey, type Vote } from "../src/feedback.js";
+import backend from "./multiuser/worker.js";
 
 interface WorkerSecrets {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
   VOTES_READ_SECRET: string;
+  DIGEST_SERVICE_SECRET?: string;
 }
 
 export type WorkerEnv = Env & WorkerSecrets;
@@ -20,7 +22,7 @@ interface CallbackQuery {
   message?: { message_id: number; chat: { id: number } };
 }
 
-function createWorker(
+export function createWorker(
   fetchImpl: FetchLike = (input, init) => fetch(input, init),
 ): ExportedHandler<WorkerEnv> {
   return {
@@ -32,6 +34,9 @@ function createWorker(
       }
       if (request.method === "GET" && url.pathname === "/votes") {
         return handleVotes(request, env);
+      }
+      if (url.pathname.startsWith("/internal/v1/")) {
+        return backend.fetch(request, env);
       }
       return new Response("not found", { status: 404 });
     },
@@ -92,7 +97,7 @@ async function handleWebhook(
     reply_markup: { inline_keyboard: confirmedKeyboard(parsed.pmid, parsed.value) },
   });
 
-  console.log({ event: "vote_recorded", pmid: parsed.pmid });
+  console.log({ event: "vote_recorded" });
   return new Response("ok");
 }
 
@@ -117,7 +122,7 @@ async function handleVotes(request: Request, env: WorkerEnv): Promise<Response> 
       if (vote) {
         votes.push(vote);
       } else {
-        console.warn({ event: "invalid_vote_skipped", key: key.name });
+        console.warn({ event: "invalid_vote_skipped" });
       }
     }
     cursor = page.list_complete ? undefined : page.cursor;
@@ -208,11 +213,10 @@ async function tg(
       body: JSON.stringify(body),
     });
     if (!res.ok) console.error({ event: "telegram_api_failed", method, status: res.status });
-  } catch (error) {
+  } catch {
     console.error({
       event: "telegram_api_error",
       method,
-      error: error instanceof Error ? error.message : String(error),
     });
   }
 }

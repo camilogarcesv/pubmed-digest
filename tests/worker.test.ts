@@ -30,6 +30,8 @@ function fakeKv(initial: Record<string, string> = {}, pageSize = Number.POSITIVE
 function env(kv: KVNamespace, overrides: Partial<WorkerEnv> = {}): WorkerEnv {
   return {
     VOTES: kv,
+    // Legacy routes must never touch D1, including during an outage.
+    DB: new Proxy({} as D1Database, { get() { throw new Error("D1 unavailable"); } }),
     TELEGRAM_BOT_TOKEN: "bot-token",
     TELEGRAM_WEBHOOK_SECRET: "webhook-secret",
     VOTES_READ_SECRET: "read-secret",
@@ -43,9 +45,23 @@ async function invoke(request: Request, workerEnv: WorkerEnv): Promise<Response>
   return worker.fetch(incoming, workerEnv, {} as ExecutionContext);
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("vote Worker", () => {
+  it("does not log Telegram URLs, tokens or private KV keys on failure", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const info = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("https://api.telegram.org/botbot-token/answerCallbackQuery"); }));
+    const { kv } = fakeKv({ "vote:private-chat:12345": "invalid" });
+    await invoke(new Request("https://worker.test/webhook", {
+      method: "POST", headers: { "x-telegram-bot-api-secret-token": "webhook-secret" },
+      body: JSON.stringify({ callback_query: { id: "private-callback", data: "v:12345:1", message: { message_id: 7, chat: { id: 99 } } } }),
+    }), env(kv));
+    await invoke(new Request("https://worker.test/votes", { headers: { authorization: "Bearer read-secret" } }), env(kv));
+    const logs = JSON.stringify([...error.mock.calls, ...warn.mock.calls, ...info.mock.calls]);
+    for (const sensitive of ["bot-token", "api.telegram.org", "private-chat", "private-callback", "12345"]) expect(logs).not.toContain(sensitive);
+  });
   it("fails closed when the webhook secret is missing or wrong", async () => {
     const { kv } = fakeKv();
     const missing = await invoke(

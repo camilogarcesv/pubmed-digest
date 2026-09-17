@@ -5,6 +5,7 @@ import { beforeEach } from 'vitest';
 declare global {
   namespace Cloudflare {
     interface Env extends LocalEnv {
+      VOTES: KVNamespace;
       MIGRATION_DB: D1Database;
       TEST_MIGRATIONS: D1Migration[];
       DIGEST_SERVICE_SECRET: string;

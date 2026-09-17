@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { DomainError, SeenCheck, SystemMode, UserId } from '../../src/multiuser/contracts.js';
 import { D1DigestRepository } from './repository.js';
 
-// These secrets will be provisioned in 2.2; never default to a development credential.
-type BackendEnv = LocalEnv & { DIGEST_SERVICE_SECRET?: string };
+// Binding shape comes from generated configuration; this handler works in either entrypoint.
+type BackendEnv = Pick<Cloudflare.Env, 'DB'> & { DIGEST_SERVICE_SECRET?: string };
 const MAX_BODY = 256 * 1024;
 class RequestError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) { super(message); }
@@ -48,7 +48,7 @@ function json(data: unknown, status = 200): Response {
   return Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
 }
 
-/** Read API only in 2.1. It has a separate local entrypoint and cannot send Telegram messages. */
+/** Internal service API. No business writes or Telegram delivery are exposed here. */
 export default {
   async fetch(request: Request, env: BackendEnv): Promise<Response> {
     const requestId = crypto.randomUUID();
