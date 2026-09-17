@@ -1,0 +1,89 @@
+name: Deploy Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full main commit SHA to validate and deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify immutable source
+        env:
+          EXPECTED_SHA: ${{ inputs.sha }}
+        run: test "$EXPECTED_SHA" = "$GITHUB_SHA"
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck && pnpm typecheck:worker && pnpm typecheck:backend
+      - run: pnpm check:worker-types && pnpm check:backend-types
+      - run: pnpm lint && pnpm test && pnpm test:worker
+
+  deploy:
+    needs: validate
+    permissions:
+      contents: read
+      actions: read
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify deployment protection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/environments/production" --jq '.' |
+            node --input-type=module -e '
+              let raw = "";
+              for await (const chunk of process.stdin) raw += chunk;
+              const e = JSON.parse(raw);
+              if (!e.protection_rules?.some(r => r.type === "required_reviewers" && r.reviewers?.length > 0) || !e.deployment_branch_policy?.custom_branch_policies) process.exit(1);
+            '
+          gh api "repos/$GITHUB_REPOSITORY/environments/production/deployment-branch-policies" --jq '.' |
+            node --input-type=module -e '
+              let raw = "";
+              for await (const chunk of process.stdin) raw += chunk;
+              const response = JSON.parse(raw);
+              const rules = response.branch_policies;
+              if (response.total_count !== 1 || rules?.length !== 1 || rules[0].name !== "main" || (rules[0].type !== undefined && rules[0].type !== "branch")) process.exit(1);
+            '
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify, migrate and deploy
+        env:
+          EXPECTED_SHA: ${{ inputs.sha }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          VOTES_KV_ID: ${{ secrets.VOTES_KV_ID }}
+          WORKER_EXPECTED_VERSION: ${{ secrets.WORKER_EXPECTED_VERSION }}
+          DIGEST_SERVICE_SECRET: ${{ secrets.DIGEST_SERVICE_SECRET }}
+          VOTES_READ_SECRET: ${{ secrets.VOTES_READ_SECRET }}
+          VOTES_URL: ${{ secrets.VOTES_URL }}
+        run: pnpm exec tsx src/operations/deploy-worker.ts

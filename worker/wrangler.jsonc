@@ -2,7 +2,10 @@
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "pubmed-digest-votes",
   "main": "worker.ts",
-  "compatibility_date": "2026-09-03",
+  "compatibility_date": "2026-09-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
   "observability": {
     "enabled": true,
     "redact_query_string": true,
@@ -14,7 +17,14 @@
   "kv_namespaces": [
     {
       "binding": "VOTES",
-      "id": "65a1d87e8d3240d895f8b998b31ba197"
+      "id": "00000000000000000000000000000000"
     }
-  ]
+  ],
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "pubmed-digest",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "./migrations",
+    "remote": false
+  }]
 }
