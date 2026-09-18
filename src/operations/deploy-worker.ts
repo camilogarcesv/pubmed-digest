@@ -5,15 +5,28 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { activeVersion, assertBindings, assertEmptySchema, releaseEnvironment } from './release-checks.js';
+import { commandFailure, formatReleaseFailure, ProviderFailure, ReleaseFailure, releaseFailure, type ReleaseStage } from './release-diagnostics.js';
 
 const exec = promisify(execFile);
 
 // This entrypoint is intentionally limited to the initial, empty-D1 release.
 // Capture provider output privately: CLI errors may contain identifiers or credentials.
-export async function deployWorker(input = process.env, runtime: {
+type Runtime = {
   command?: (args: string[]) => Promise<string>;
   fetch?: typeof fetch;
-} = {}): Promise<void> {
+};
+
+export async function deployWorker(input = process.env, runtime: Runtime = {}): Promise<void> {
+  const progress: { stage: ReleaseStage } = { stage: 'prepare' };
+  try {
+    await executeDeployment(input, runtime, progress);
+  } catch (error) {
+    if (error instanceof ReleaseFailure) throw error;
+    throw releaseFailure(progress.stage, error, progress.stage === 'rollback' ? 'manual_reconciliation' : 'not_attempted');
+  }
+}
+
+async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, progress: { stage: ReleaseStage }): Promise<void> {
   const config = releaseEnvironment(input);
   const root = process.cwd();
   await mkdir('.local/releases', { recursive: true, mode: 0o700 });
@@ -36,15 +49,15 @@ export async function deployWorker(input = process.env, runtime: {
         env: { ...input, WRANGLER_LOG_PATH: resolve(directory, 'wrangler.log'), WRANGLER_SEND_METRICS: 'false', CI: 'true' },
       });
       return result.stdout;
-    } catch {
-      throw new Error('Provider command failed; inspect private diagnostics');
+    } catch (error) {
+      throw commandFailure(error);
     }
   };
   const cloudflare = async (suffix: string): Promise<unknown> => {
     const response = await (runtime.fetch ?? fetch)(`https://api.cloudflare.com/client/v4/accounts/${config.CLOUDFLARE_ACCOUNT_ID}/${suffix}`, {
       headers: { authorization: `Bearer ${config.CLOUDFLARE_API_TOKEN}` }, signal: AbortSignal.timeout(20_000), redirect: 'error',
     });
-    if (!response.ok) throw new Error('Cloudflare inventory unavailable');
+    if (!response.ok) throw new ProviderFailure(response.status === 401 || response.status === 403 ? 'provider_access_denied' : 'step_failed');
     const body = z.object({ success: z.literal(true), result: z.unknown() }).parse(await response.json());
     return body.result;
   };
@@ -113,6 +126,7 @@ export async function deployWorker(input = process.env, runtime: {
     await verifyLegacy();
   };
 
+  progress.stage = 'inventory';
   const previous = await deployment();
   if (previous !== config.WORKER_EXPECTED_VERSION) throw new Error('Deployment drift; inventory again');
   await settings();
@@ -120,36 +134,51 @@ export async function deployWorker(input = process.env, runtime: {
   if (database.uuid !== config.D1_DATABASE_ID || database.name !== template.d1_databases[0].database_name) throw new Error('Database identity mismatch');
   const subdomain = z.object({ subdomain: z.string() }).parse(await cloudflare('workers/subdomain'));
   if (origin !== `https://${template.name as string}.${subdomain.subdomain}.workers.dev`) throw new Error('Worker origin mismatch');
+  progress.stage = 'legacy_check';
   await verifyLegacy();
+  progress.stage = 'schema_precheck';
   await checkDatabase(false);
+  progress.stage = 'checkpoint';
   await writeFile(resolve(directory, 'checkpoint.json'), JSON.stringify({ previousVersion: previous, sha: config.GITHUB_SHA }), { mode: 0o600 });
+  progress.stage = 'bundle';
   await wrangler(['deploy', '--dry-run']);
+  progress.stage = 'migrate';
   await wrangler(['d1', 'migrations', 'apply', 'DB', '--remote']);
+  progress.stage = 'schema_postcheck';
   await checkDatabase(true);
+  progress.stage = 'drift_check';
   if (await deployment() !== previous) throw new Error('Concurrent deployment detected');
+  progress.stage = 'secrets_prepare';
   await writeFile(secretsPath, JSON.stringify({ DIGEST_SERVICE_SECRET: config.DIGEST_SERVICE_SECRET }), { mode: 0o600 });
   let published: string | undefined;
   try {
+    progress.stage = 'publish';
     await wrangler(['deploy', '--strict', '--keep-vars', '--secrets-file', secretsPath, '--tag', config.GITHUB_SHA]);
+    progress.stage = 'activation_check';
     published = await deployment();
     if (published === previous) throw new Error('New version was not activated');
+    progress.stage = 'bindings_check';
     await settings(true);
+    progress.stage = 'smoke';
     await smoke();
+    progress.stage = 'schema_final_check';
     await checkDatabase(true);
     console.log('Worker release verified; legacy operation preserved.');
-  } catch {
+  } catch (error) {
+    const failedStage = progress.stage;
+    progress.stage = 'rollback';
     // A failed upload may still have activated a version. Only roll back our own SHA.
     const current = await deployment();
     if (current !== previous) {
       const version = z.object({ annotations: z.record(z.string(), z.string()).optional() }).parse(await cloudflare(`${scriptPath}/versions/${current}`));
       if (version.annotations?.['workers/tag'] !== config.GITHUB_SHA || (published && published !== current)) {
-        throw new Error('Concurrent or unknown deployment; manual reconciliation required');
+        throw releaseFailure(failedStage, error, 'manual_reconciliation');
       }
       await wrangler(['rollback', previous, '--yes', '--message', 'restore previous worker after failed verification']);
       if (await deployment() !== previous) throw new Error('Rollback verification failed');
       await verifyLegacy();
     }
-    throw new Error('Release failed; previous Worker retained or restored; D1 preserved');
+    throw releaseFailure(failedStage, error, current === previous ? 'previous_retained' : 'previous_restored');
   } finally {
     await unlink(secretsPath).catch(() => { console.error('Private secret-file cleanup failed; remove it before reusing this runner.'); });
   }
@@ -157,5 +186,5 @@ export async function deployWorker(input = process.env, runtime: {
 
 // Never print provider responses, validation inputs, stack traces or raw exception text.
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  deployWorker().catch(() => { console.error('Worker release failed. Check private inventory and release prerequisites before retrying.'); process.exitCode = 1; });
+  deployWorker().catch(error => { console.error(formatReleaseFailure(error)); process.exitCode = 1; });
 }
