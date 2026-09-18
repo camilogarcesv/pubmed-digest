@@ -17,6 +17,7 @@ describe('D1 tenant isolation and migration', () => {
   it('upgrades an existing v1 database without changing existing records', async () => {
     const db = env.MIGRATION_DB;
     await applyD1Migrations(db, env.TEST_MIGRATIONS.slice(0, 1));
+    const firstMigration = (await db.prepare('SELECT * FROM d1_migrations ORDER BY id').all()).results;
     await db.prepare("INSERT INTO users(id,slug,email,timezone,status,created_at) VALUES(?,?,?,'UTC','active',?)")
       .bind(alice, 'alice', 'alice@example.test', timestamp).run();
     await db.prepare('INSERT INTO profile_versions VALUES(?,1,?,1,?)').bind(alice, JSON.stringify(profile), timestamp).run();
@@ -25,6 +26,9 @@ describe('D1 tenant isolation and migration', () => {
     expect((await db.prepare('SELECT * FROM profile_versions').all()).results).toEqual(before.results);
     await expect(db.prepare("UPDATE profile_versions SET config_json='{}'").run()).rejects.toThrow('new profile version');
     expect((await db.prepare('SELECT * FROM d1_migrations').all()).results).toHaveLength(env.TEST_MIGRATIONS.length);
+    await applyD1Migrations(db, env.TEST_MIGRATIONS);
+    expect((await db.prepare('SELECT * FROM d1_migrations ORDER BY id LIMIT 1').all()).results).toEqual(firstMigration);
+    expect((await db.prepare('SELECT name FROM sqlite_schema WHERE type=\'trigger\'').all()).results).toHaveLength(3);
   });
 
   it('keeps seen, score, vote and eval independent for the same PMID', async () => {
@@ -103,6 +107,22 @@ describe('D1 tenant isolation and migration', () => {
 });
 
 describe('draft idempotency and reservations', () => {
+  it('enforces both draft triggers for direct writes that bypass the repository', async () => {
+    const repository = await seedUsers();
+    const created = await repository.createRun(run(alice, 2));
+    await repository.putItems(alice, created.id, 0, [item()]);
+    await repository.importLedger(alice, [{ article: article('124'), entry: ledger(alice, '124') }]);
+    for (const status of ['prepared', 'delivering', 'needs_reconciliation', 'succeeded', 'aborted']) {
+      await env.DB.prepare('UPDATE digest_runs SET status=? WHERE id=?').bind(status, created.id).run();
+      await expect(env.DB.prepare('INSERT INTO digest_chunks VALUES(?,?,1,?)')
+        .bind(alice, created.id, 'a'.repeat(64)).run()).rejects.toThrow('run is not a draft');
+      await expect(env.DB.prepare("INSERT INTO digest_items VALUES(?,?,'124',9,NULL,'test','selected')")
+        .bind(alice, created.id).run()).rejects.toThrow('run is not a draft');
+    }
+    expect((await env.DB.prepare('SELECT * FROM digest_chunks').all()).results).toHaveLength(1);
+    expect((await env.DB.prepare('SELECT * FROM digest_items').all()).results).toHaveLength(1);
+  });
+
   it('retries by stable key, rejects changed input, and keeps the ledger untouched', async () => {
     const repository = await seedUsers();
     const input = run();
