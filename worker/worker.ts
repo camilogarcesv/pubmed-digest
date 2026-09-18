@@ -11,6 +11,7 @@ interface WorkerSecrets {
   TELEGRAM_WEBHOOK_SECRET: string;
   VOTES_READ_SECRET: string;
   DIGEST_SERVICE_SECRET?: string;
+  IMPORT_SERVICE_SECRET?: string;
 }
 
 export type WorkerEnv = Env & WorkerSecrets;
@@ -112,23 +113,28 @@ async function handleVotes(request: Request, env: WorkerEnv): Promise<Response> 
     return new Response("forbidden", { status: 403 });
   }
 
+  const strict = new URL(request.url).searchParams.get("strict") === "1";
+  let scanned = 0, invalid = 0;
   const votes: Vote[] = [];
   let cursor: string | undefined;
   do {
     const page = await env.VOTES.list({ prefix: "vote:", cursor });
     for (const key of page.keys) {
+      scanned++;
       const raw = await env.VOTES.get(key.name);
       const vote = raw ? parseStoredVote(raw) : undefined;
-      if (vote) {
+      if (vote && (!strict || key.name === voteKey(vote.chatId, vote.pmid))) {
         votes.push(vote);
       } else {
+        invalid++;
         console.warn({ event: "invalid_vote_skipped" });
       }
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
 
-  return Response.json({ votes });
+  if (strict && invalid) return Response.json({ error: "invalid_vote_records", scanned, invalid }, { status: 409, headers: { "cache-control": "no-store" } });
+  return Response.json(strict ? { votes, scanned, invalid, format: 1 } : { votes }, { headers: { "cache-control": "no-store" } });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

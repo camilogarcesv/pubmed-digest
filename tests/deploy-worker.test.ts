@@ -12,13 +12,13 @@ const next = '33333333-3333-4333-8333-333333333333';
 const input = {
   CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32), CLOUDFLARE_API_TOKEN: 'synthetic-api-token-only',
   D1_DATABASE_ID: '11111111-1111-4111-8111-111111111111', VOTES_KV_ID: 'b'.repeat(32),
-  WORKER_EXPECTED_VERSION: previous, DIGEST_SERVICE_SECRET: 'c'.repeat(64), VOTES_READ_SECRET: 'synthetic-export-secret',
+  WORKER_EXPECTED_VERSION: previous, IMPORT_SERVICE_SECRET: 'f'.repeat(64), DIGEST_SERVICE_SECRET: 'c'.repeat(64), VOTES_READ_SECRET: 'synthetic-export-secret',
   VOTES_URL: 'https://pubmed-digest-votes.test.workers.dev/votes',
   GITHUB_SHA: 'd'.repeat(40), EXPECTED_SHA: 'd'.repeat(40), GITHUB_REF: 'refs/heads/main',
   GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_ACTIONS: 'true',
 };
 
-function fixture(options: { populated?: boolean; smokeFailure?: boolean; deployUncertain?: boolean; drift?: boolean; rollbackDrift?: boolean; migrateFailure?: boolean; partial?: boolean; rollbackFailure?: boolean; accessDenied?: boolean; beforeCommand?: (db: DatabaseSync, args: string[]) => void } = {}) {
+function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure?: boolean; deployUncertain?: boolean; drift?: boolean; rollbackDrift?: boolean; migrateFailure?: boolean; partial?: boolean; rollbackFailure?: boolean; accessDenied?: boolean; beforeCommand?: (db: DatabaseSync, args: string[]) => void } = {}) {
   let current = options.drift ? next : previous;
   const db = new DatabaseSync(':memory:');
   const migrate = (names: string[], directory = 'worker/migrations') => {
@@ -37,8 +37,8 @@ function fixture(options: { populated?: boolean; smokeFailure?: boolean; deployU
     }
   };
   if (options.partial) migrate(migrations.slice(0, 1));
-  if (options.populated) {
-    migrate(migrations);
+  if (options.populated || options.upgrade) {
+    migrate(options.upgrade ? migrations.slice(0, 4) : migrations);
     db.exec("INSERT INTO users(id,slug,email,timezone,status,created_at) VALUES('test','test','test@example.test','UTC','paused','2026-09-15')");
   }
   let configPath = '';
@@ -81,6 +81,7 @@ function fixture(options: { populated?: boolean; smokeFailure?: boolean; deployU
     if (path.includes('/versions/')) return Response.json({ success: true, result: { annotations: { 'workers/tag': options.rollbackDrift ? 'another-sha' : input.GITHUB_SHA } } });
     const auth = new Headers(init?.headers).get('authorization');
     if (path === '/votes') return auth === `Bearer ${input.VOTES_READ_SECRET}` ? Response.json({ votes: [] }) : new Response('', { status: 403 });
+    if (path === '/internal/v1/imports') return new Response('', { status: auth === `Bearer ${input.IMPORT_SERVICE_SECRET}` ? 400 : 401 });
     if (options.smokeFailure) return new Response('', { status: 500 });
     if (auth !== `Bearer ${input.DIGEST_SERVICE_SECRET}`) return new Response('', { status: 401 });
     const data = path.endsWith('/mode') ? { mode: 'legacy' } : path.endsWith('/seen/check') ? { seen: [false] }
@@ -220,4 +221,13 @@ it('rolls back migration content and its checkpoint when the final transactional
   expect(f.db.prepare("SELECT email FROM users WHERE id='test'").get()?.email).toBe('test@example.test');
   expect(f.db.prepare("SELECT name FROM d1_migrations WHERE name='synthetic_additive.sql'").get()).toBeUndefined();
   expect(f.db.prepare('SELECT * FROM operation_assertions').all()).toEqual([]);
+});
+
+it('upgrades populated prior schema while preserving pre-existing fields and rollback compatibility', async () => {
+  const f = fixture({ upgrade: true, smokeFailure: true });
+  f.db.exec("INSERT INTO articles VALUES('123','Original',NULL,NULL,'2026-09-15'); INSERT INTO user_articles VALUES('test','123','2026-09-15',0,NULL,NULL,NULL,1,NULL)");
+  await expect(deployWorker(input, f)).rejects.toMatchObject({ recovery: 'previous_restored' });
+  expect(f.current()).toBe(previous);
+  expect(f.db.prepare('SELECT pmid,first_seen,relevance,delivered,delivered_at FROM user_articles').get()).toEqual({ pmid: '123', first_seen: '2026-09-15', relevance: 0, delivered: 1, delivered_at: null });
+  expect(f.db.prepare("SELECT name FROM d1_migrations WHERE name='0005_import_sessions.sql'").get()).toBeDefined();
 });

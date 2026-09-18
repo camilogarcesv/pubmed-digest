@@ -22,15 +22,19 @@ export async function assertSchema(sql: Sql, applied: string[]): Promise<void> {
 }
 
 /** Stable content digest, independent of provider row/object ordering. */
-export async function snapshot(sql: Sql, tables: string[]): Promise<Record<string, string>> {
-  const result: Record<string, string> = {};
+export type Snapshot = Record<string, { columns: string[]; hash: string }>;
+export async function snapshot(sql: Sql, tables: string[], baseline?: Snapshot): Promise<Snapshot> {
+  const result: Snapshot = {};
   for (const table of tables.filter(t => !['operation_lock', 'operation_assertions'].includes(t))) {
-    const rows = await sql(`SELECT * FROM ${table}`);
-    const encoded = rows.map(row => JSON.stringify(Object.keys(row).sort().map(key => [key, row[key]]))).sort();
-    result[table] = createHash('sha256').update(JSON.stringify(encoded)).digest('hex');
+    const columns = baseline?.[table]?.columns ?? (await sql(`PRAGMA table_info(${table})`)).map(row => String(row.name)).sort();
+    // Column names come from a schema already checked against tracked migrations.
+    // New nullable/defaulted columns do not change the digest of pre-existing fields.
+    const rows = await sql(`SELECT ${columns.map(c => `"${c}"`).join(',')} FROM ${table}`);
+    const encoded = rows.map(row => JSON.stringify(columns.map(key => [key, row[key]]))).sort();
+    result[table] = { columns, hash: createHash('sha256').update(JSON.stringify(encoded)).digest('hex') };
   }
   return result;
 }
-export function assertPreserved(before: Record<string, string>, after: Record<string, string>): void {
-  if (Object.entries(before).some(([key, value]) => after[key] !== value)) throw new Error('Database content changed');
+export function assertPreserved(before: Snapshot, after: Snapshot): void {
+  if (Object.entries(before).some(([key, value]) => after[key]?.hash !== value.hash)) throw new Error('Database content changed');
 }

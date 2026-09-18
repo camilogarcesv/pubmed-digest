@@ -5,8 +5,8 @@ export const businessTables = [
   'digest_runs', 'digest_chunks', 'digest_items', 'user_articles',
   'delivery_messages', 'delivery_resolutions', 'votes', 'data_imports',
 ] as const;
-export const migrations = ['0001_multiuser.sql', '0002_draft_guards.sql', '0003_source_order.sql', '0004_operation_lock.sql'];
-export const operationTables = ['operation_lock', 'operation_assertions'];
+export const migrations = ['0001_multiuser.sql', '0002_draft_guards.sql', '0003_source_order.sql', '0004_operation_lock.sql', '0005_import_sessions.sql'];
+export const operationTables = ['operation_lock', 'operation_assertions', 'import_sessions', 'import_blocks'];
 const hexId = z.string().regex(/^[a-f0-9]{32}$/).refine(s => !/^0+$/.test(s));
 const uuid = z.uuid().refine(s => s !== '00000000-0000-0000-0000-000000000000');
 
@@ -18,6 +18,7 @@ export function releaseEnvironment(input: NodeJS.ProcessEnv) {
     VOTES_KV_ID: hexId,
     WORKER_EXPECTED_VERSION: uuid,
     DIGEST_SERVICE_SECRET: z.string().regex(/^[a-f0-9]{64}$/),
+    IMPORT_SERVICE_SECRET: z.string().regex(/^[a-f0-9]{64}$/),
     VOTES_READ_SECRET: z.string().min(16),
     VOTES_URL: z.url().refine(s => {
       const u = new URL(s);
@@ -29,7 +30,7 @@ export function releaseEnvironment(input: NodeJS.ProcessEnv) {
     GITHUB_EVENT_NAME: z.literal('workflow_dispatch'),
     GITHUB_ACTIONS: z.literal('true'),
   }).refine(v => v.GITHUB_SHA === v.EXPECTED_SHA, 'SHA mismatch')
-    .refine(v => v.DIGEST_SERVICE_SECRET !== v.VOTES_READ_SECRET, 'Credentials must differ').parse(input);
+    .refine(v => new Set([v.DIGEST_SERVICE_SECRET, v.IMPORT_SERVICE_SECRET, v.VOTES_READ_SECRET]).size === 3, 'Credentials must differ').parse(input);
 }
 
 export function activeVersion(input: unknown): string {
@@ -55,7 +56,7 @@ export function assertBindings(input: unknown, kvId: string, databaseId: string,
   for (const b of bindings) {
     if (b.name === 'DB' && b.type === 'd1' && b.id === databaseId) continue;
     if (b.name === 'VOTES' && b.type === 'kv_namespace') continue;
-    if (['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'VOTES_READ_SECRET', 'DIGEST_SERVICE_SECRET'].includes(b.name) && b.type === 'secret_text') continue;
+    if (['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'VOTES_READ_SECRET', 'DIGEST_SERVICE_SECRET', 'IMPORT_SERVICE_SECRET'].includes(b.name) && b.type === 'secret_text') continue;
     throw new Error('Unexpected binding');
   }
   if (requireD1 && (!names.has('DB') || !names.has('DIGEST_SERVICE_SECRET'))) throw new Error('Internal API binding missing');

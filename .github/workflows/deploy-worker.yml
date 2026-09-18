@@ -88,6 +88,7 @@ jobs:
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
           VOTES_KV_ID: ${{ secrets.VOTES_KV_ID }}
           WORKER_EXPECTED_VERSION: ${{ inputs.expected_version }}
+          IMPORT_SERVICE_SECRET: ${{ secrets.IMPORT_SERVICE_SECRET }}
           DIGEST_SERVICE_SECRET: ${{ secrets.DIGEST_SERVICE_SECRET }}
           VOTES_READ_SECRET: ${{ secrets.VOTES_READ_SECRET }}
           VOTES_URL: ${{ secrets.VOTES_URL }}
