@@ -5,7 +5,7 @@ const releaseEnv = {
   CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32), CLOUDFLARE_API_TOKEN: 'synthetic-api-token-only',
   D1_DATABASE_ID: '11111111-1111-4111-8111-111111111111', VOTES_KV_ID: 'b'.repeat(32),
   WORKER_EXPECTED_VERSION: '22222222-2222-4222-8222-222222222222',
-  DIGEST_SERVICE_SECRET: 'c'.repeat(64), VOTES_READ_SECRET: 'synthetic-export-secret',
+  IMPORT_SERVICE_SECRET: 'f'.repeat(64), DIGEST_SERVICE_SECRET: 'c'.repeat(64), VOTES_READ_SECRET: 'synthetic-export-secret',
   VOTES_URL: 'https://pubmed-digest.test.workers.dev/votes',
   GITHUB_SHA: 'd'.repeat(40), EXPECTED_SHA: 'd'.repeat(40), GITHUB_REF: 'refs/heads/main',
   GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_ACTIONS: 'true',

@@ -1,9 +1,11 @@
 import { z } from 'zod';
 import { DomainError, SeenCheck, SystemMode, UserId } from '../../src/multiuser/contracts.js';
+import { ImportRepository } from './imports.js';
+import { ImportLease, ImportManifest } from '../../src/multiuser/import-contracts.js';
 import { D1DigestRepository } from './repository.js';
 
 // Binding shape comes from generated configuration; this handler works in either entrypoint.
-type BackendEnv = Pick<Cloudflare.Env, 'DB'> & { DIGEST_SERVICE_SECRET?: string };
+type BackendEnv = Pick<Cloudflare.Env, 'DB'> & { DIGEST_SERVICE_SECRET?: string; IMPORT_SERVICE_SECRET?: string; VOTES_READ_SECRET?: string; TELEGRAM_WEBHOOK_SECRET?: string; TELEGRAM_BOT_TOKEN?: string };
 const MAX_BODY = 256 * 1024;
 class RequestError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) { super(message); }
@@ -48,13 +50,46 @@ function json(data: unknown, status = 200): Response {
   return Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
 }
 
-/** Internal service API. No business writes or Telegram delivery are exposed here. */
+/** Separate read and administrative import capabilities; no delivery operations. */
 export default {
   async fetch(request: Request, env: BackendEnv): Promise<Response> {
     const requestId = crypto.randomUUID();
     try {
-      if (!(await authorized(request, env.DIGEST_SERVICE_SECRET))) throw new RequestError(401, 'unauthorized', 'No autorizado.');
       const path = new URL(request.url).pathname;
+      if (path === '/internal/v1/imports' || path.startsWith('/internal/v1/imports/')) {
+        const secret = env.IMPORT_SERVICE_SECRET;
+        if (!secret || [env.DIGEST_SERVICE_SECRET, env.VOTES_READ_SECRET, env.TELEGRAM_WEBHOOK_SECRET, env.TELEGRAM_BOT_TOKEN].includes(secret)
+          || !(await authorized(request, secret))) throw new RequestError(401, 'unauthorized', 'No autorizado.');
+        const imports = new ImportRepository(env.DB);
+        if (['/internal/v1/imports/lease', '/internal/v1/imports/lease/renew'].includes(path) && request.method === 'POST') {
+          const { owner } = ImportLease.parse(await readJson(request));
+          await imports.lease(owner, path.endsWith('/renew')); return json({ acquired: true });
+        }
+        if (path === '/internal/v1/imports/lease' && request.method === 'DELETE') {
+          const { owner } = ImportLease.parse(await readJson(request));
+          await imports.release(owner); return json({ released: true });
+        }
+        if (path === '/internal/v1/imports' && request.method === 'POST') {
+          const { owner, manifest } = z.strictObject({ owner: z.uuid(), manifest: ImportManifest }).parse(await readJson(request));
+          return json(await imports.create(owner, manifest));
+        }
+        const match = /^\/internal\/v1\/imports\/([a-f0-9-]+)(?:\/(blocks|verify|finalize))?$/.exec(path);
+        if (match) {
+          const id = z.uuid().parse(match[1]);
+          if (request.method === 'GET' && !match[2]) return json(await imports.status(id));
+          if (request.method === 'GET' && match[2] === 'verify') return json(await imports.verify(id));
+          if (request.method === 'POST' && match[2] === 'blocks') {
+            const { owner, block } = z.strictObject({ owner: z.uuid(), block: z.unknown() }).parse(await readJson(request));
+            return json(await imports.put(owner, id, block));
+          }
+          if (request.method === 'POST' && match[2] === 'finalize') {
+            const { owner } = ImportLease.parse(await readJson(request));
+            return json(await imports.verify(id, owner));
+          }
+        }
+        throw new RequestError(404, 'not_found', 'Ruta no encontrada.');
+      }
+      if (!(await authorized(request, env.DIGEST_SERVICE_SECRET))) throw new RequestError(401, 'unauthorized', 'No autorizado.');
       const repository = new D1DigestRepository(env.DB);
       if (request.method === 'GET' && path === '/internal/v1/mode') {
         const row = await env.DB.prepare('SELECT mode FROM system_controls WHERE singleton=1').first<{ mode: string }>();

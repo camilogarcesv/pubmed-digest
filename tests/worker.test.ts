@@ -175,3 +175,23 @@ describe("vote Worker", () => {
     expect(data.size).toBe(0);
   });
 });
+
+describe('strict capture export', () => {
+  it.each(['invalid-json', 'wrong-key', 'disappeared'])('fails closed without silently dropping %s records', async kind => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const vote = { pmid: '123', value: 1, chatId: '100', votedAt: '2026-09-15T12:00:00.000Z' };
+    const { kv, data } = fakeKv({ 'vote:100:123': kind === 'invalid-json' ? 'private-invalid' : JSON.stringify({ ...vote, chatId: kind === 'wrong-key' ? '200' : '100' }) });
+    if (kind === 'disappeared') { const list = kv.list.bind(kv); vi.spyOn(kv, 'list').mockImplementation(async options => { const page = await list(options); data.clear(); return page; }); }
+    const response = await invoke(new Request('https://worker.test/votes?strict=1', { headers: { authorization: 'Bearer read-secret' } }), env(kv));
+    expect(response.status).toBe(409);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toEqual({ error: 'invalid_vote_records', scanned: 1, invalid: 1 });
+  });
+  it('includes capture version and exact scan counts across pages', async () => {
+    const vote = { pmid: '123', value: 1, chatId: '100', votedAt: '2026-09-15T12:00:00.000Z' };
+    const { kv } = fakeKv({ 'vote:100:123': JSON.stringify(vote), 'vote:100:456': JSON.stringify({ ...vote, pmid: '456' }) }, 1);
+    const response = await invoke(new Request('https://worker.test/votes?strict=1', { headers: { authorization: 'Bearer read-secret' } }), env(kv));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ format: 1, scanned: 2, invalid: 0 });
+  });
+});

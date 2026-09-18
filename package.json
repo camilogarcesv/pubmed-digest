@@ -23,6 +23,7 @@
     "db:migrate:local": "wrangler d1 migrations apply pubmed-digest-local --local --config worker/local/wrangler.jsonc",
     "types:worker": "wrangler types worker/worker-configuration.d.ts --config worker/wrangler.jsonc",
     "check:worker-types": "wrangler types worker/worker-configuration.d.ts --config worker/wrangler.jsonc --check",
+    "import:user": "tsx src/operations/import-user.ts",
     "state:repair": "tsx src/repair-state.ts",
     "eval": "tsx src/eval.ts"
   },

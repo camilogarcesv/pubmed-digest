@@ -119,6 +119,10 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
       if (path.endsWith('/mode')) z.object({ mode: z.literal('legacy') }).strict().parse(body);
       else z.object({ users: z.array(z.unknown()).length(0) }).strict().parse(body);
     }
+    for (const secret of [undefined, config.DIGEST_SERVICE_SECRET, config.VOTES_READ_SECRET]) {
+      if ((await get('/internal/v1/imports', secret, {})).status !== 401) throw new Error('Import credential isolation failed');
+    }
+    if ((await get('/internal/v1/imports', config.IMPORT_SERVICE_SECRET, {})).status !== 400) throw new Error('Import credential unavailable');
     const probeUser = crypto.randomUUID();
     const seen = await get('/internal/v1/seen/check', config.DIGEST_SERVICE_SECRET, { pairs: [{ userId: probeUser, pmid: '1' }] });
     if (seen.status !== 200 || seen.headers.get('cache-control') !== 'no-store') throw new Error('Seen smoke failed');
@@ -187,11 +191,11 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
   progress.stage = 'schema_postcheck';
   const tablesAfter = await checkDatabase(true);
   await lease();
-  assertPreserved(before, await snapshot(sql, tablesAfter));
+  assertPreserved(before, await snapshot(sql, tablesAfter, before));
   progress.stage = 'drift_check';
   if (await deployment() !== previous) throw new Error('Concurrent deployment detected');
   progress.stage = 'secrets_prepare';
-  await writeFile(secretsPath, JSON.stringify({ DIGEST_SERVICE_SECRET: config.DIGEST_SERVICE_SECRET }), { mode: 0o600 });
+  await writeFile(secretsPath, JSON.stringify({ DIGEST_SERVICE_SECRET: config.DIGEST_SERVICE_SECRET, IMPORT_SERVICE_SECRET: config.IMPORT_SERVICE_SECRET }), { mode: 0o600 });
   let published: string | undefined;
   try {
     progress.stage = 'publish';
@@ -207,7 +211,7 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     progress.stage = 'schema_final_check';
     await lease();
     await checkDatabase(true);
-    assertPreserved(before, await snapshot(sql, tablesAfter));
+    assertPreserved(before, await snapshot(sql, tablesAfter, before));
     console.log('Worker release verified; legacy operation preserved.');
   } catch (error) {
     const failedStage = progress.stage;
