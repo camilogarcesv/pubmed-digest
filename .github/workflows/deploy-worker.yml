@@ -8,6 +8,11 @@ on:
         required: true
         type: string
 
+      expected_version:
+        description: Active Worker version from fresh inventory
+        required: true
+        type: string
+
 permissions:
   contents: read
 
@@ -82,7 +87,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
           VOTES_KV_ID: ${{ secrets.VOTES_KV_ID }}
-          WORKER_EXPECTED_VERSION: ${{ secrets.WORKER_EXPECTED_VERSION }}
+          WORKER_EXPECTED_VERSION: ${{ inputs.expected_version }}
           DIGEST_SERVICE_SECRET: ${{ secrets.DIGEST_SERVICE_SECRET }}
           VOTES_READ_SECRET: ${{ secrets.VOTES_READ_SECRET }}
           VOTES_URL: ${{ secrets.VOTES_URL }}
