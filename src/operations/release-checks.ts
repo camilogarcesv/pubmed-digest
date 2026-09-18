@@ -5,7 +5,8 @@ export const businessTables = [
   'digest_runs', 'digest_chunks', 'digest_items', 'user_articles',
   'delivery_messages', 'delivery_resolutions', 'votes', 'data_imports',
 ] as const;
-export const migrations = ['0001_multiuser.sql', '0002_draft_guards.sql', '0003_source_order.sql'];
+export const migrations = ['0001_multiuser.sql', '0002_draft_guards.sql', '0003_source_order.sql', '0004_operation_lock.sql'];
+export const operationTables = ['operation_lock', 'operation_assertions'];
 const hexId = z.string().regex(/^[a-f0-9]{32}$/).refine(s => !/^0+$/.test(s));
 const uuid = z.uuid().refine(s => s !== '00000000-0000-0000-0000-000000000000');
 
@@ -61,7 +62,7 @@ export function assertBindings(input: unknown, kvId: string, databaseId: string,
 }
 
 export function assertEmptySchema(tables: string[], counts: number[], mode: unknown, applied: string[], complete: boolean): void {
-  const allowed = new Set<string>([...businessTables, 'system_controls']);
+  const allowed = new Set<string>([...businessTables, ...operationTables, 'system_controls']);
   if (tables.some(t => !allowed.has(t))) throw new Error('Unexpected database table');
   if (counts.length !== tables.length || counts.some(n => !Number.isInteger(n) || n !== 0)) throw new Error('Database contains unexpected data');
   if (applied.some((name, i) => name !== migrations[i])) throw new Error('Unexpected migrations');
@@ -70,4 +71,10 @@ export function assertEmptySchema(tables: string[], counts: number[], mode: unkn
   if (complete && (tables.length !== allowed.size || applied.length !== migrations.length || mode !== 'legacy')) {
     throw new Error('Incomplete database schema');
   }
+}
+
+export function assertCompatibleSchema(tables: string[], counts: number[], mode: unknown, applied: string[], complete: boolean): void {
+  assertEmptySchema(tables, tables.map(() => 0), mode, applied, complete);
+  if (counts.length !== tables.length || counts.some(n => !Number.isInteger(n) || n < 0)) throw new Error('Invalid counts');
+  if (counts.some(n => n > 0) && !tables.includes('operation_lock')) throw new Error('Populated database lacks fencing');
 }

@@ -1,15 +1,16 @@
+import { assertSchema, snapshot, assertPreserved } from './database-snapshot.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, mkdtemp, readFile, writeFile, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { activeVersion, assertBindings, assertEmptySchema, releaseEnvironment } from './release-checks.js';
+import { activeVersion, assertBindings, assertCompatibleSchema, migrations, releaseEnvironment } from './release-checks.js';
 import { commandFailure, formatReleaseFailure, ProviderFailure, ReleaseFailure, releaseFailure, type ReleaseStage } from './release-diagnostics.js';
 
 const exec = promisify(execFile);
 
-// This entrypoint is intentionally limited to the initial, empty-D1 release.
+// Initial installation requires empty tables; upgrades preserve all existing content.
 // Capture provider output privately: CLI errors may contain identifiers or credentials.
 type Runtime = {
   command?: (args: string[]) => Promise<string>;
@@ -76,7 +77,7 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     const rows = await sql("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' ORDER BY name");
     const tables = rows.map(row => z.string().parse(row.name)).filter(name => name !== 'd1_migrations');
     // Validate identifiers against an allowlist before constructing COUNT queries.
-    assertEmptySchema(tables, tables.map(() => 0), 'legacy', tables.length ? ['0001_multiuser.sql'] : [], false);
+    assertCompatibleSchema(tables, tables.map(() => 0), 'legacy', tables.length ? ['0001_multiuser.sql'] : [], false);
     const counts: number[] = [];
     let mode: unknown;
     for (const table of tables) {
@@ -89,8 +90,11 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     }
     const applied = rows.some(r => r.name === 'd1_migrations')
       ? (await sql('SELECT name FROM d1_migrations ORDER BY id')).map(r => z.string().parse(r.name)) : [];
-    assertEmptySchema(tables, counts, mode, applied, complete);
+    assertCompatibleSchema(tables, counts, mode, applied, complete);
     if ((await sql('PRAGMA foreign_key_check')).length !== 0) throw new Error('Foreign key check failed');
+    await assertSchema(sql, applied);
+    if (tables.includes('users') && (await sql("SELECT id FROM users WHERE status!='paused'")).length) throw new Error('Expected paused users');
+    return tables;
   };
   const origin = new URL(config.VOTES_URL).origin;
   const get = async (path: string, secret?: string, body?: unknown) => (runtime.fetch ?? fetch)(`${origin}${path}`, {
@@ -137,15 +141,53 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
   progress.stage = 'legacy_check';
   await verifyLegacy();
   progress.stage = 'schema_precheck';
-  await checkDatabase(false);
+  const tablesBefore = await checkDatabase(false);
+  const owner = crypto.randomUUID();
+  let locked = false;
+  let leaseLost = false;
+  const acquire = async () => {
+    const rows = await sql(`INSERT INTO operation_lock(singleton,owner,kind,expires_at) VALUES(1,'${owner}','deploy',unixepoch()+900)
+      ON CONFLICT(singleton) DO UPDATE SET owner=excluded.owner,kind=excluded.kind,expires_at=excluded.expires_at
+      WHERE operation_lock.expires_at<=unixepoch() RETURNING owner`);
+    if (rows[0]?.owner !== owner) throw new Error('Operation lease unavailable');
+    locked = true;
+  };
+  const lease = async () => {
+    if (leaseLost) throw new Error('Operation lease lost');
+    const rows = await sql(`UPDATE operation_lock SET expires_at=unixepoch()+900
+      WHERE singleton=1 AND owner='${owner}' AND kind='deploy' AND expires_at>unixepoch() RETURNING owner`);
+    if (rows[0]?.owner !== owner) { leaseLost = true; throw new Error('Operation lease lost'); }
+  };
+  if (tablesBefore.includes('operation_lock')) await acquire();
+  try {
+  const before = await snapshot(sql, tablesBefore);
   progress.stage = 'checkpoint';
-  await writeFile(resolve(directory, 'checkpoint.json'), JSON.stringify({ previousVersion: previous, sha: config.GITHUB_SHA }), { mode: 0o600 });
+  await writeFile(resolve(directory, 'checkpoint.json'), JSON.stringify({ previousVersion: previous, sha: config.GITHUB_SHA, before }), { mode: 0o600 });
   progress.stage = 'bundle';
   await wrangler(['deploy', '--dry-run']);
   progress.stage = 'migrate';
+  // Wrangler submits each migration plus its checkpoint as one D1 transaction.
+  // Private copies add a lease assertion inside that same transaction, leaving tracked
+  // migrations immutable. Bootstrap 0001–0004 runs before any import endpoint exists.
+  const migrationDir = resolve(directory, 'migrations');
+  await mkdir(migrationDir, { mode: 0o700 });
+  const fence = `INSERT INTO operation_assertions(owner,kind,valid) VALUES('${owner}','deploy',1);`;
+  for (const [index, name] of migrations.entries()) {
+    const source = await readFile(resolve('worker/migrations', name), 'utf8');
+    let wrapped = source;
+    if (locked || index > 3) wrapped = `${fence}\n${source}\n${fence}\nDELETE FROM operation_assertions;`;
+    else if (index === 3) wrapped = `${source}\nINSERT INTO operation_lock VALUES(1,'${owner}','deploy',unixepoch()+900);\n${fence}\nDELETE FROM operation_assertions;`;
+    await writeFile(resolve(migrationDir, name), wrapped, { mode: 0o600 });
+  }
+  template.d1_databases[0].migrations_dir = migrationDir;
+  await writeFile(configPath, JSON.stringify(template), { mode: 0o600 });
+  if (locked) await lease();
   await wrangler(['d1', 'migrations', 'apply', 'DB', '--remote']);
+  locked = true;
   progress.stage = 'schema_postcheck';
-  await checkDatabase(true);
+  const tablesAfter = await checkDatabase(true);
+  await lease();
+  assertPreserved(before, await snapshot(sql, tablesAfter));
   progress.stage = 'drift_check';
   if (await deployment() !== previous) throw new Error('Concurrent deployment detected');
   progress.stage = 'secrets_prepare';
@@ -153,6 +195,7 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
   let published: string | undefined;
   try {
     progress.stage = 'publish';
+    await lease();
     await wrangler(['deploy', '--strict', '--keep-vars', '--secrets-file', secretsPath, '--tag', config.GITHUB_SHA]);
     progress.stage = 'activation_check';
     published = await deployment();
@@ -162,10 +205,13 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     progress.stage = 'smoke';
     await smoke();
     progress.stage = 'schema_final_check';
+    await lease();
     await checkDatabase(true);
+    assertPreserved(before, await snapshot(sql, tablesAfter));
     console.log('Worker release verified; legacy operation preserved.');
   } catch (error) {
     const failedStage = progress.stage;
+    try { await lease(); } catch { throw releaseFailure(failedStage, error, 'manual_reconciliation'); }
     progress.stage = 'rollback';
     // A failed upload may still have activated a version. Only roll back our own SHA.
     const current = await deployment();
@@ -181,6 +227,9 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     throw releaseFailure(failedStage, error, current === previous ? 'previous_retained' : 'previous_restored');
   } finally {
     await unlink(secretsPath).catch(() => { console.error('Private secret-file cleanup failed; remove it before reusing this runner.'); });
+  }
+  } finally {
+    if (locked && !leaseLost) await sql(`DELETE FROM operation_lock WHERE owner='${owner}' AND kind='deploy'`);
   }
 }
 

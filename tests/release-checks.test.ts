@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeVersion, assertBindings, assertEmptySchema, businessTables, migrations, releaseEnvironment } from '../src/operations/release-checks.js';
+import { activeVersion, assertBindings, assertEmptySchema, businessTables, operationTables, migrations, releaseEnvironment } from '../src/operations/release-checks.js';
 
 const releaseEnv = {
   CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32), CLOUDFLARE_API_TOKEN: 'synthetic-api-token-only',
@@ -47,7 +47,7 @@ describe('release safety gates', () => {
   });
   it('allows only an empty or tracked partial schema before migration, complete empty legacy after', () => {
     expect(() => assertEmptySchema([], [], undefined, [], false)).not.toThrow();
-    const tables = [...businessTables, 'system_controls'];
+    const tables = [...businessTables, ...operationTables, 'system_controls'];
     const counts = tables.map(() => 0);
     expect(() => assertEmptySchema(tables, counts, 'legacy', migrations, true)).not.toThrow();
     expect(() => assertEmptySchema(tables, counts, 'legacy', migrations.slice(0, 1), false)).not.toThrow();

@@ -1,8 +1,10 @@
+import { DatabaseSync } from 'node:sqlite';
+import { readFileSync } from 'node:fs';
 import { readFile, access } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { deployWorker } from '../src/operations/deploy-worker.js';
-import { businessTables, migrations } from '../src/operations/release-checks.js';
+import { migrations } from '../src/operations/release-checks.js';
 import { formatReleaseFailure } from '../src/operations/release-diagnostics.js';
 
 const previous = '22222222-2222-4222-8222-222222222222';
@@ -16,12 +18,33 @@ const input = {
   GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_ACTIONS: 'true',
 };
 
-function fixture(options: { populated?: boolean; smokeFailure?: boolean; deployUncertain?: boolean; drift?: boolean; rollbackDrift?: boolean; migrateFailure?: boolean; partial?: boolean; rollbackFailure?: boolean; accessDenied?: boolean } = {}) {
+function fixture(options: { populated?: boolean; smokeFailure?: boolean; deployUncertain?: boolean; drift?: boolean; rollbackDrift?: boolean; migrateFailure?: boolean; partial?: boolean; rollbackFailure?: boolean; accessDenied?: boolean; beforeCommand?: (db: DatabaseSync, args: string[]) => void } = {}) {
   let current = options.drift ? next : previous;
-  let migrated = false;
+  const db = new DatabaseSync(':memory:');
+  const migrate = (names: string[], directory = 'worker/migrations') => {
+    db.exec('CREATE TABLE IF NOT EXISTS d1_migrations(id INTEGER PRIMARY KEY,name TEXT)');
+    for (const name of names) {
+      if (db.prepare('SELECT 1 FROM d1_migrations WHERE name=?').get(name)) continue;
+      db.exec('BEGIN');
+      try {
+        db.exec(readFileSync(`${directory}/${name}`, 'utf8'));
+        db.prepare('INSERT INTO d1_migrations(name) VALUES(?)').run(name);
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+    }
+  };
+  if (options.partial) migrate(migrations.slice(0, 1));
+  if (options.populated) {
+    migrate(migrations);
+    db.exec("INSERT INTO users(id,slug,email,timezone,status,created_at) VALUES('test','test','test@example.test','UTC','paused','2026-09-15')");
+  }
   let configPath = '';
   const command = vi.fn(async (args: string[]) => {
     configPath = args[args.indexOf('--config') + 1];
+    options.beforeCommand?.(db, args);
     if (args[0] === 'deployments') return JSON.stringify([{ created_on: '2026-09-15', versions: [{ version_id: current, percentage: 100 }] }]);
     if (args[0] === 'rollback') {
       if (options.rollbackFailure) throw new Error('private rollback details');
@@ -38,16 +61,11 @@ function fixture(options: { populated?: boolean; smokeFailure?: boolean; deployU
         stdout: `Migration failed for private-id: incomplete input: SQLITE_ERROR [code: 7500] ${input.CLOUDFLARE_API_TOKEN}`,
         stderr: `private SQL ${input.VOTES_URL} ${input.DIGEST_SERVICE_SECRET}`,
       });
-      migrated = true;
+      migrate(migrations, JSON.parse(readFileSync(configPath, 'utf8')).d1_databases[0].migrations_dir);
       return '';
     }
     const query = args[args.indexOf('--command') + 1];
-    let results: unknown[] = [];
-    if (query.includes('sqlite_schema')) results = migrated || options.populated || options.partial ? [...businessTables, 'system_controls', 'd1_migrations'].map(name => ({ name })) : [];
-    else if (query.includes('SELECT name FROM d1_migrations')) results = (migrated ? migrations : migrations.slice(0, 1)).map(name => ({ name }));
-    else if (query.includes('SELECT singleton')) results = [{ singleton: 1, mode: 'legacy' }];
-    else if (query.includes('count(*)')) results = [{ n: options.populated ? 1 : 0 }];
-    else if (!query.includes('foreign_key_check')) throw new Error(`Unexpected SQL: ${query}`);
+    const results = db.prepare(query).all();
     return JSON.stringify([{ success: true, results }]);
   });
   const fetcher: typeof fetch = vi.fn(async (url, init) => {
@@ -69,7 +87,7 @@ function fixture(options: { populated?: boolean; smokeFailure?: boolean; deployU
       : path.endsWith('/eval-context') ? { votes: [] } : { users: [] };
     return Response.json(data, { headers: { 'cache-control': 'no-store' } });
   });
-  return { command, fetch: fetcher, configPath: () => configPath, current: () => current };
+  return { command, fetch: fetcher, configPath: () => configPath, current: () => current, db };
 }
 
 it('validates resources, migrates only schema and deploys additively with private config', async () => {
@@ -85,7 +103,7 @@ it('validates resources, migrates only schema and deploys additively with privat
   expect(f.command.mock.calls.some(([args]) => args.includes('--secrets-file') && args.includes('--keep-vars'))).toBe(true);
   expect(f.command.mock.calls.some(([args]) => args[0] === 'rollback')).toBe(false);
 });
-it.each([{ populated: true }, { drift: true }, { migrateFailure: true }])('refuses to deploy after failed prerequisite %j', async options => {
+it.each([{ drift: true }, { migrateFailure: true }])('refuses to deploy after failed prerequisite %j', async options => {
   const f = fixture(options);
   await expect(deployWorker(input, f)).rejects.toThrow();
   expect(f.command.mock.calls.some(([args]) => args[0] === 'deploy' && !args.includes('--dry-run'))).toBe(false);
@@ -109,7 +127,7 @@ it('resumes an empty partially migrated database without clearing existing schem
   expect(f.current()).toBe(next);
   const commands = f.command.mock.calls.map(([args]) => args);
   expect(commands.filter(args => args.includes('migrations'))).toHaveLength(1);
-  expect(commands.some(args => /DROP|DELETE|TRUNCATE/.test(args.join(' ')))).toBe(false);
+  expect(commands.some(args => /DROP|TRUNCATE/.test(args.join(' ')))).toBe(false);
 });
 
 it('reports a safe migration failure and never publishes or rolls back the Worker', async () => {
@@ -131,4 +149,75 @@ it.each([
   const f = fixture(options);
   const error = await deployWorker(input, f).catch(error => error);
   expect(JSON.parse(formatReleaseFailure(error))).toEqual({ event: 'worker_release_failed', stage, code, recovery });
+});
+
+it('preserves populated paused legacy databases during upgrades', async () => { await deployWorker(input, fixture({ populated: true })); });
+
+it.each([
+  "UPDATE operation_lock SET expires_at=unixepoch()-1",
+  "UPDATE operation_lock SET owner='another-import',kind='import',expires_at=unixepoch()-1",
+  'DELETE FROM operation_lock',
+])('stops before migration instead of reacquiring a lost lease: %s', async loss => {
+  const f = fixture({ populated: true, beforeCommand(db, args) {
+    if (args[0] === 'deploy' && args.includes('--dry-run')) db.exec(loss);
+  } });
+  await expect(deployWorker(input, f)).rejects.toMatchObject({ stage: 'migrate' });
+  expect(f.command.mock.calls.some(([args]) => args.includes('migrations'))).toBe(false);
+  expect(f.command.mock.calls.some(([args]) => args[0] === 'deploy' && !args.includes('--dry-run'))).toBe(false);
+});
+
+it('retains the active version for reconciliation when a post-publish lease is lost', async () => {
+  const f = fixture({ populated: true, beforeCommand(db, args) {
+    if (args[0] === 'deploy' && !args.includes('--dry-run')) {
+      db.exec("UPDATE operation_lock SET owner='another-import',kind='import',expires_at=unixepoch()+900");
+    }
+  } });
+  await expect(deployWorker(input, f)).rejects.toMatchObject({ stage: 'schema_final_check', recovery: 'manual_reconciliation' });
+  expect(f.current()).toBe(next);
+  expect(f.command.mock.calls.some(([args]) => args[0] === 'rollback')).toBe(false);
+  expect(f.db.prepare('SELECT owner FROM operation_lock').get()?.owner).toBe('another-import');
+});
+
+it('detects changes to existing content before publishing without deleting that content', async () => {
+  const f = fixture({ populated: true, beforeCommand(db, args) {
+    if (args.includes('migrations')) db.exec("UPDATE users SET email='changed@example.test' WHERE id='test'");
+  } });
+  await expect(deployWorker(input, f)).rejects.toMatchObject({ stage: 'schema_postcheck' });
+  expect(f.current()).toBe(previous);
+  expect(f.db.prepare("SELECT email FROM users WHERE id='test'").get()?.email).toBe('changed@example.test');
+  expect(f.command.mock.calls.some(([args]) => args[0] === 'rollback')).toBe(false);
+});
+
+it('rejects schema drift even when migration names and row counts match', async () => {
+  const f = fixture({ populated: true });
+  f.db.exec('DROP INDEX votes_user_time');
+  await expect(deployWorker(input, f)).rejects.toMatchObject({ stage: 'schema_precheck' });
+  expect(f.command.mock.calls.some(([args]) => args.includes('migrations'))).toBe(false);
+});
+
+it('rolls back migration content and its checkpoint when the final transactional lease guard fails', async () => {
+  const f = fixture({ populated: true });
+  await deployWorker(input, f);
+  const config = JSON.parse(await readFile(f.configPath(), 'utf8'));
+  const source = await readFile('worker/migrations/0001_multiuser.sql', 'utf8');
+  const wrapped = await readFile(resolve(config.d1_databases[0].migrations_dir, '0001_multiuser.sql'), 'utf8');
+  const [before, after] = wrapped.split(source);
+  expect(before).toContain('INSERT INTO operation_assertions');
+  expect(after).toContain('INSERT INTO operation_assertions');
+  const owner = /VALUES\('([^']+)'/.exec(before)?.[1];
+  expect(owner).toBeDefined();
+  f.db.prepare("INSERT INTO operation_lock VALUES(1,?,'deploy',unixepoch()+900)").run(owner!);
+  f.db.exec('BEGIN');
+  try {
+    expect(() => f.db.exec(`${before}
+      UPDATE users SET email='changed@example.test' WHERE id='test';
+      INSERT INTO d1_migrations(name) VALUES('synthetic_additive.sql');
+      UPDATE operation_lock SET expires_at=unixepoch()-1;
+      ${after}`)).toThrow('operation lease lost');
+  } finally {
+    f.db.exec('ROLLBACK');
+  }
+  expect(f.db.prepare("SELECT email FROM users WHERE id='test'").get()?.email).toBe('test@example.test');
+  expect(f.db.prepare("SELECT name FROM d1_migrations WHERE name='synthetic_additive.sql'").get()).toBeUndefined();
+  expect(f.db.prepare('SELECT * FROM operation_assertions').all()).toEqual([]);
 });
