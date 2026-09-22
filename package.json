@@ -30,19 +30,19 @@
     "eval": "tsx src/eval.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.122.0",
+    "@anthropic-ai/sdk": "0.127.0",
     "fast-xml-parser": "5.11.1",
-    "yaml": "2.9.0",
-    "zod": "4.5.1"
+    "yaml": "2.9.1",
+    "zod": "4.6.5"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.1.9",
-    "@types/node": "26.4.0",
-    "eslint": "10.10.0",
-    "tsx": "4.23.12",
+    "@cloudflare/vitest-plugin": "1.1.13",
+    "@types/node": "26.6.2",
+    "eslint": "10.11.0",
+    "tsx": "4.23.13",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.0",
     "vitest": "4.1.11",
-    "wrangler": "4.128.0"
+    "wrangler": "4.135.0"
   }
 }
