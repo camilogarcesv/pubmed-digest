@@ -3,8 +3,21 @@
 // Cloudflare Worker: always-on Telegram vote receiver and bearer-protected vote export.
 // Bindings are generated from wrangler.jsonc; secrets intentionally remain runtime-only.
 
-import { confirmedKeyboard, parseCallback, voteAck, voteKey, type Vote } from "../src/feedback.js";
+import { confirmedKeyboard, parseCallback, VOTE_NOT_SAVED, voteAck, voteKey, type Vote } from "../src/feedback.js";
 import backend from "./multiuser/worker.js";
+
+/** Telegram callback updates are a few KiB; the cap only bounds what an update can cost to read. */
+const MAX_UPDATE_BYTES = 64 * 1024;
+/**
+ * update_id is sequential only while the bot keeps receiving updates: after a week without any,
+ * Telegram picks the next one at random. Two updates less than a week apart are therefore
+ * comparable; a day covers Telegram's redelivery horizon with a wide margin, and a vote stored
+ * earlier than that always yields to a new press.
+ */
+const ORDERING_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** KV value: the exported vote plus the Telegram update that produced it (ordering/dedupe only). */
+type StoredVote = Vote & { updateId: number };
 
 interface WorkerSecrets {
   TELEGRAM_BOT_TOKEN: string;
@@ -61,9 +74,17 @@ async function handleWebhook(
     return new Response("forbidden", { status: 403 });
   }
 
+  // Only authenticated requests reach this point, so an oversized body is a genuine Telegram
+  // update we do not handle. Answer 2xx: a non-2xx makes Telegram redeliver it and hold back
+  // the updates queued behind it. No vote update comes anywhere near this size.
+  const body = await readBounded(request, MAX_UPDATE_BYTES);
+  if (!body) {
+    console.warn({ event: "webhook_update_ignored", reason: "too_large" });
+    return new Response("ok");
+  }
   let update: unknown;
   try {
-    update = await request.json();
+    update = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(body));
   } catch {
     return new Response("bad request", { status: 400 });
   }
@@ -78,20 +99,59 @@ async function handleWebhook(
     return new Response("ok");
   }
 
+  // update_id orders presses of the same button and identifies redeliveries.
+  const updateId = updateIdFrom(update);
+  if (updateId === undefined) {
+    console.warn({ event: "vote_update_invalid" });
+    await tg(fetchImpl, env, "answerCallbackQuery", { callback_query_id: cq.id, text: VOTE_NOT_SAVED });
+    return new Response("ok");
+  }
+
   const chatId = String(cq.message.chat.id);
-  const vote: Vote = {
+  const key = voteKey(chatId, parsed.pmid);
+  const vote: StoredVote = {
     pmid: parsed.pmid,
     value: parsed.value,
     chatId,
     votedAt: new Date().toISOString(),
+    updateId,
   };
 
-  // Acknowledge first so the Telegram interaction remains responsive.
+  // Persist first; the reader is told "anotado" only for a vote that is actually stored.
+  // KV has no compare-and-set: the read-then-write below drops redelivered or out-of-order
+  // presses on a best-effort basis (writes are visible first where they were made).
+  let outcome: "recorded" | "superseded" | "failed";
+  try {
+    const stored = comparableUpdateId(await env.VOTES.get(key), Date.parse(vote.votedAt));
+    if (stored !== undefined && stored >= updateId) {
+      outcome = "superseded";
+    } else {
+      await env.VOTES.put(key, JSON.stringify(vote));
+      outcome = "recorded";
+    }
+  } catch {
+    // Includes KV's 429 for a second write to the same key within one second.
+    outcome = "failed";
+  }
+
+  if (outcome === "failed") {
+    // 2xx on purpose: a redelivery would store a vote the reader was just told had failed.
+    // The keyboard stays as it was, so pressing again is the retry.
+    console.error({ event: "vote_persist_failed" });
+    await tg(fetchImpl, env, "answerCallbackQuery", { callback_query_id: cq.id, text: VOTE_NOT_SAVED });
+    return new Response("ok");
+  }
+  if (outcome === "superseded") {
+    // A redelivery, or an older press arriving after a newer one: the newer vote stands.
+    console.log({ event: "vote_superseded_ignored" });
+    await tg(fetchImpl, env, "answerCallbackQuery", { callback_query_id: cq.id });
+    return new Response("ok");
+  }
+
   await tg(fetchImpl, env, "answerCallbackQuery", {
     callback_query_id: cq.id,
     text: voteAck(parsed.value),
   });
-  await env.VOTES.put(voteKey(chatId, parsed.pmid), JSON.stringify(vote));
   await tg(fetchImpl, env, "editMessageReplyMarkup", {
     chat_id: cq.message.chat.id,
     message_id: cq.message.message_id,
@@ -100,6 +160,62 @@ async function handleWebhook(
 
   console.log({ event: "vote_recorded" });
   return new Response("ok");
+}
+
+/** Read at most `limit` bytes; undefined when the body is larger. */
+async function readBounded(request: Request, limit: number): Promise<Uint8Array | undefined> {
+  const declared = Number(request.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > limit) return undefined;
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        await reader.cancel();
+        return undefined;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+function updateIdFrom(update: unknown): number | undefined {
+  if (!isRecord(update)) return undefined;
+  const id = update.update_id;
+  return typeof id === "number" && Number.isSafeInteger(id) && id >= 0 ? id : undefined;
+}
+
+/**
+ * The update that wrote a stored vote, when it can still be compared with a new one (see
+ * ORDERING_WINDOW_MS). Undefined for old votes and for votes written before update tracking.
+ */
+function comparableUpdateId(raw: string | null, now: number): number | undefined {
+  if (raw === null) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value) || typeof value.votedAt !== "string") return undefined;
+  const id = value.updateId;
+  if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 0) return undefined;
+  const storedAt = Date.parse(value.votedAt);
+  return Number.isFinite(storedAt) && now - storedAt < ORDERING_WINDOW_MS ? id : undefined;
 }
 
 async function handleVotes(request: Request, env: WorkerEnv): Promise<Response> {

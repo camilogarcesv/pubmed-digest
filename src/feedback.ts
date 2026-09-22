@@ -63,3 +63,6 @@ export function voteKey(chatId: string, pmid: string): string {
 export function voteAck(value: 0 | 1): string {
   return value === 1 ? "👍 anotado" : "👎 anotado";
 }
+
+/** Toast when the vote could not be stored. The keyboard is left untouched so the reader can retry. */
+export const VOTE_NOT_SAVED = "No se pudo guardar tu voto. Inténtalo de nuevo.";
