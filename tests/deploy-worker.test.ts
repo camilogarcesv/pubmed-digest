@@ -81,7 +81,7 @@ function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure
     if (path.includes('/versions/')) return Response.json({ success: true, result: { annotations: { 'workers/tag': options.rollbackDrift ? 'another-sha' : input.GITHUB_SHA } } });
     const auth = new Headers(init?.headers).get('authorization');
     if (path === '/votes') return auth === `Bearer ${input.VOTES_READ_SECRET}` ? Response.json({ votes: [] }) : new Response('', { status: 403 });
-    if (path === '/internal/v1/imports') return new Response('', { status: auth === `Bearer ${input.IMPORT_SERVICE_SECRET}` ? 400 : 401 });
+    if (path === '/internal/v1/imports' || path.startsWith('/internal/v1/imports/')) return new Response('', { status: auth === `Bearer ${input.IMPORT_SERVICE_SECRET}` ? 400 : 401 });
     if (options.smokeFailure) return new Response('', { status: 500 });
     if (auth !== `Bearer ${input.DIGEST_SERVICE_SECRET}`) return new Response('', { status: 401 });
     const data = path.endsWith('/mode') ? { mode: 'legacy' } : path.endsWith('/seen/check') ? { seen: [false] }
@@ -115,6 +115,14 @@ it.each([{ smokeFailure: true }, { deployUncertain: true }])('restores the previ
   expect(f.current()).toBe(previous);
   expect(f.command.mock.calls.some(([args]) => args[0] === 'rollback' && args[1] === previous)).toBe(true);
   expect(f.command.mock.calls.some(([args]) => args.includes('delete'))).toBe(false);
+});
+it('restores the previous Worker when reconciliation is reachable without the import credential', async () => {
+  const f = fixture();
+  const original = f.fetch;
+  f.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => new URL(String(url)).pathname.includes('/vote-reconciliations/')
+    ? new Response('', { status: 400 }) : original(url, init)) as typeof fetch;
+  await expect(deployWorker(input, f)).rejects.toMatchObject({ stage: 'smoke', recovery: 'previous_restored' });
+  expect(f.current()).toBe(previous);
 });
 it('never rolls back an unknown concurrently published version', async () => {
   const f = fixture({ smokeFailure: true, rollbackDrift: true });

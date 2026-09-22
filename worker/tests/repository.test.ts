@@ -28,7 +28,7 @@ describe('D1 tenant isolation and migration', () => {
     expect((await db.prepare('SELECT * FROM d1_migrations').all()).results).toHaveLength(env.TEST_MIGRATIONS.length);
     await applyD1Migrations(db, env.TEST_MIGRATIONS);
     expect((await db.prepare('SELECT * FROM d1_migrations ORDER BY id LIMIT 1').all()).results).toEqual(firstMigration);
-    expect((await db.prepare('SELECT name FROM sqlite_schema WHERE type=\'trigger\'').all()).results).toHaveLength(8);
+    expect((await db.prepare('SELECT name FROM sqlite_schema WHERE type=\'trigger\'').all()).results).toHaveLength(9);
   });
 
   it('keeps seen, score, vote and eval independent for the same PMID', async () => {

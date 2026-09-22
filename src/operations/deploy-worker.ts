@@ -124,6 +124,12 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     }
     if ((await get('/internal/v1/imports', config.IMPORT_SERVICE_SECRET, {})).status !== 400) throw new Error('Import credential unavailable');
     const probeUser = crypto.randomUUID();
+    // Reconciliation is import-credential only; an empty body is rejected before any D1 read.
+    const reconcile = `/internal/v1/imports/users/${probeUser}/vote-reconciliations/plan`;
+    for (const secret of [undefined, config.DIGEST_SERVICE_SECRET, config.VOTES_READ_SECRET]) {
+      if ((await get(reconcile, secret, {})).status !== 401) throw new Error('Reconciliation credential isolation failed');
+    }
+    if ((await get(reconcile, config.IMPORT_SERVICE_SECRET, {})).status !== 400) throw new Error('Reconciliation route unavailable');
     const seen = await get('/internal/v1/seen/check', config.DIGEST_SERVICE_SECRET, { pairs: [{ userId: probeUser, pmid: '1' }] });
     if (seen.status !== 200 || seen.headers.get('cache-control') !== 'no-store') throw new Error('Seen smoke failed');
     z.object({ seen: z.tuple([z.literal(false)]) }).strict().parse(await seen.json());
