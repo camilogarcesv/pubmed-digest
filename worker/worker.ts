@@ -1,10 +1,10 @@
 /// <reference path="./worker-configuration.d.ts" />
 
-// Cloudflare Worker: always-on Telegram vote receiver and bearer-protected vote export.
+// Cloudflare Worker: always-on Telegram vote receiver, bearer-protected vote export and the internal D1 API.
 // Bindings are generated from wrangler.jsonc; secrets intentionally remain runtime-only.
 
 import { confirmedKeyboard, parseCallback, VOTE_NOT_SAVED, voteAck, voteKey, type Vote } from "../src/feedback.js";
-import backend from "./multiuser/worker.js";
+import { createBackend } from "./multiuser/worker.js";
 
 /** Telegram callback updates are a few KiB; the cap only bounds what an update can cost to read. */
 const MAX_UPDATE_BYTES = 64 * 1024;
@@ -39,6 +39,8 @@ interface CallbackQuery {
 export function createWorker(
   fetchImpl: FetchLike = (input, init) => fetch(input, init),
 ): ExportedHandler<WorkerEnv> {
+  // The digest backend reaches Telegram only through the same injectable fetch as the webhook.
+  const backend = createBackend(fetchImpl);
   return {
     async fetch(request, env): Promise<Response> {
       const url = new URL(request.url);

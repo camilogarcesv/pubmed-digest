@@ -97,8 +97,8 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     return tables;
   };
   const origin = new URL(config.VOTES_URL).origin;
-  const get = async (path: string, secret?: string, body?: unknown) => (runtime.fetch ?? fetch)(`${origin}${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
+  const get = async (path: string, secret?: string, body?: unknown, method = body === undefined ? 'GET' : 'POST') => (runtime.fetch ?? fetch)(`${origin}${path}`, {
+    method,
     headers: { ...(secret ? { authorization: `Bearer ${secret}` } : {}), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     redirect: 'error', signal: AbortSignal.timeout(20_000),
@@ -135,6 +135,24 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
       if ((await get(ledger, secret, {})).status !== 401) throw new Error('Ledger credential isolation failed');
     }
     if ((await get(ledger, config.IMPORT_SERVICE_SECRET, {})).status !== 400) throw new Error('Ledger route unavailable');
+    // Digest run writes, deliveries and alerts: digest credential only, and inert while legacy.
+    const runs = `/internal/v1/users/${probeUser}/digest-runs`, probeRun = `${runs}/${crypto.randomUUID()}`;
+    for (const [path, method] of [[runs, 'POST'], [`${probeRun}/items/0`, 'PUT'], [`${probeRun}/prepare`, 'POST'], [`${probeRun}/abort`, 'POST'],
+      [`${probeRun}/destinations/${crypto.randomUUID()}/deliver`, 'POST'], ['/internal/v1/ops/alerts', 'POST']]) {
+      for (const secret of [undefined, config.VOTES_READ_SECRET, config.IMPORT_SERVICE_SECRET]) {
+        if ((await get(path, secret, {}, method)).status !== 401) throw new Error('Digest run credential isolation failed');
+      }
+      if ((await get(path, config.DIGEST_SERVICE_SECRET, {}, method)).status !== 409) throw new Error('Digest run writes are not inert');
+    }
+    const resolution = `/internal/v1/admin/users/${probeUser}/digest-runs/${crypto.randomUUID()}/messages/${crypto.randomUUID()}/resolve`;
+    for (const secret of [undefined, config.DIGEST_SERVICE_SECRET, config.VOTES_READ_SECRET]) {
+      if ((await get(resolution, secret, {})).status !== 401) throw new Error('Resolution credential isolation failed');
+    }
+    if ((await get(resolution, config.IMPORT_SERVICE_SECRET, {})).status !== 409) throw new Error('Resolution is not inert');
+    const listed = await get(`${runs}?period=2026-W01`, config.DIGEST_SERVICE_SECRET);
+    if (listed.status !== 200 || listed.headers.get('cache-control') !== 'no-store') throw new Error('Run list smoke failed');
+    z.object({ runs: z.array(z.unknown()).length(0) }).strict().parse(await listed.json());
+    if ((await get(`/internal/v1/users/by-slug/probe-${probeUser.slice(0, 8)}/context`, config.DIGEST_SERVICE_SECRET)).status !== 404) throw new Error('Context smoke failed');
     const seen = await get('/internal/v1/seen/check', config.DIGEST_SERVICE_SECRET, { pairs: [{ userId: probeUser, pmid: '1' }] });
     if (seen.status !== 200 || seen.headers.get('cache-control') !== 'no-store') throw new Error('Seen smoke failed');
     z.object({ seen: z.tuple([z.literal(false)]) }).strict().parse(await seen.json());

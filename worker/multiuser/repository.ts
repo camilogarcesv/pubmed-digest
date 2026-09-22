@@ -4,8 +4,21 @@ import {
   ProfileVersion, SeenCheck, User, UserId, VoteInput,
   type DigestRepository, type EvalVote, type RunRecord, type UserContext,
 } from '../../src/multiuser/contracts.js';
+import { ACTIVE_USER, D1_MODE, clear, fenced, guard } from './digest-fence.js';
 
-const runColumns = 'id, user_id AS userId, status, payload_hash AS payloadHash, expected_items AS expectedItems, profile_version AS profileVersion, kind';
+const runColumns = 'id, user_id AS userId, status, payload_hash AS payloadHash, expected_items AS expectedItems, profile_version AS profileVersion, kind, period, run_key AS runKey';
+
+type ContextRow = { userId: string; slug: string; timezone: string; version: number | null; config_json: string | null; created_at: string | null };
+/** One user's context from its active profile row, ordered sources and digest destinations. */
+export function toUserContext(u: ContextRow, sources: { kind: 'journal' | 'query'; value: string }[], destinations: { id: string; ops_enabled: number }[]): UserContext {
+  if (u.version === null) throw new DomainError('conflict', 'User has no active profile');
+  return {
+    userId: u.userId, slug: u.slug, timezone: u.timezone,
+    profile: ProfileVersion.parse({ userId: u.userId, version: u.version, profile: JSON.parse(u.config_json!), sources, createdAt: u.created_at }),
+    destinationIds: destinations.map(d => d.id),
+    opsDestinationIds: destinations.filter(d => d.ops_enabled === 1).map(d => d.id),
+  };
+}
 
 /** All reads/writes are explicitly tenant-scoped; global articles contain PubMed data only. */
 export class D1DigestRepository implements DigestRepository {
@@ -38,21 +51,16 @@ export class D1DigestRepository implements DigestRepository {
       this.db.prepare(`SELECT s.user_id,s.kind,s.value FROM profile_sources s
         JOIN profile_versions p ON p.user_id=s.user_id AND p.version=s.profile_version AND p.active=1
         JOIN users u ON u.id=s.user_id AND u.status='active' ORDER BY s.position`),
-      this.db.prepare(`SELECT d.id,d.user_id FROM destinations d JOIN users u ON u.id=d.user_id
+      this.db.prepare(`SELECT d.id,d.user_id,d.ops_enabled FROM destinations d JOIN users u ON u.id=d.user_id
         WHERE u.status='active' AND d.status='active' AND d.digest_enabled=1 ORDER BY d.id`),
     ]);
     const users = z.array(z.object({ userId: UserId, slug: z.string(), timezone: z.string(),
       version: z.number().nullable(), config_json: z.string().nullable(), created_at: z.string().nullable() })).parse(userResult.results);
     if (users.length > 100) throw new DomainError('conflict', 'Contexts require pagination above 100 users');
-    if (users.some(u => u.version === null)) throw new DomainError('conflict', 'Active user has no active profile');
     const sources = z.array(z.object({ user_id: UserId, kind: z.enum(['journal', 'query']), value: z.string() })).parse(sourceResult.results);
-    const destinations = z.array(z.object({ id: z.uuid(), user_id: UserId })).parse(destinationResult.results);
-    return users.map(u => ({
-      userId: u.userId, slug: u.slug, timezone: u.timezone,
-      profile: ProfileVersion.parse({ userId: u.userId, version: u.version, profile: JSON.parse(u.config_json!),
-        sources: sources.filter(s => s.user_id === u.userId).map(({ kind, value }) => ({ kind, value })), createdAt: u.created_at }),
-      destinationIds: destinations.filter(d => d.user_id === u.userId).map(d => d.id),
-    }));
+    const destinations = z.array(z.object({ id: z.uuid(), user_id: UserId, ops_enabled: z.number() })).parse(destinationResult.results);
+    return users.map(u => toUserContext(u, sources.filter(s => s.user_id === u.userId).map(({ kind, value }) => ({ kind, value })),
+      destinations.filter(d => d.user_id === u.userId)));
   }
 
   async seen(input: z.infer<typeof SeenCheck>): Promise<boolean[]> {
@@ -103,18 +111,33 @@ export class D1DigestRepository implements DigestRepository {
 
   async createRun(input: z.infer<typeof CreateRun>): Promise<RunRecord> {
     const run = CreateRun.parse(input);
-    await this.db.prepare(`INSERT INTO digest_runs(id,user_id,profile_version,run_key,payload_hash,kind,status,expected_items,profile_snapshot_json,created_at,updated_at)
-      SELECT ?,p.user_id,p.version,?,?,?,'draft',?,json_object('profile',json(p.config_json),'sources',
-        json((SELECT json_group_array(json_object('kind',s.kind,'value',s.value)) FROM
-          (SELECT kind,value FROM profile_sources WHERE user_id=p.user_id AND profile_version=p.version ORDER BY position) s))),?,?
-      FROM profile_versions p JOIN users u ON u.id=p.user_id
-      WHERE p.user_id=? AND p.version=? AND p.active=1 AND u.status='active'
-      ON CONFLICT(user_id,run_key) DO NOTHING`)
-      .bind(run.id, run.runKey, run.payloadHash, run.kind, run.expectedItems, run.createdAt, run.createdAt, run.userId, run.profileVersion).run();
+    // Another open attempt for the same week is excluded in the INSERT itself; the partial unique
+    // index is the backstop for two first attempts racing each other.
+    const openAttempt = `EXISTS(SELECT 1 FROM digest_runs o WHERE o.user_id=? AND o.kind=? AND o.period=? AND o.status!='aborted' AND o.run_key!=?)`;
+    try {
+      await this.db.prepare(`INSERT INTO digest_runs(id,user_id,profile_version,run_key,payload_hash,kind,status,expected_items,profile_snapshot_json,created_at,updated_at,period)
+        SELECT ?,p.user_id,p.version,?,?,?,'draft',?,json_object('profile',json(p.config_json),'sources',
+          json((SELECT json_group_array(json_object('kind',s.kind,'value',s.value)) FROM
+            (SELECT kind,value FROM profile_sources WHERE user_id=p.user_id AND profile_version=p.version ORDER BY position) s))),?,?,?
+        FROM profile_versions p JOIN users u ON u.id=p.user_id
+        WHERE p.user_id=? AND p.version=? AND p.active=1 AND u.status='active' AND ${D1_MODE} AND NOT ${openAttempt}
+        ON CONFLICT(user_id,run_key) DO NOTHING`)
+        .bind(run.id, run.runKey, run.payloadHash, run.kind, run.expectedItems, run.createdAt, run.createdAt, run.period, run.userId, run.profileVersion,
+          run.userId, run.kind, run.period, run.runKey).run();
+    } catch (error) {
+      if (/digest_runs\.period/.test(String(error))) throw new DomainError('conflict', 'Another run for this period is still open');
+      throw error;
+    }
     const existing = await this.db.prepare(`SELECT ${runColumns} FROM digest_runs WHERE user_id=? AND run_key=?`)
       .bind(run.userId, run.runKey).first<RunRecord>();
-    if (!existing) throw new DomainError('not_found', 'Active user/profile not found');
-    if (existing.payloadHash !== run.payloadHash || existing.expectedItems !== run.expectedItems || existing.profileVersion !== run.profileVersion || existing.kind !== run.kind) {
+    if (!existing) {
+      if (run.period !== null && await this.db.prepare(`SELECT ${openAttempt} AS open`).bind(run.userId, run.kind, run.period, run.runKey).first('open') === 1) {
+        throw new DomainError('conflict', 'Another run for this period is still open');
+      }
+      throw new DomainError('not_found', 'Active user/profile not found');
+    }
+    if (existing.payloadHash !== run.payloadHash || existing.expectedItems !== run.expectedItems || existing.profileVersion !== run.profileVersion
+      || existing.kind !== run.kind || existing.period !== run.period) {
       throw new DomainError('conflict', 'Run key already used with different input');
     }
     return existing;
@@ -143,11 +166,13 @@ export class D1DigestRepository implements DigestRepository {
     }
     await this.getRun(userId, runId);
     try {
-      await this.db.batch([
+      await fenced(this.db, [
+        guard(this.db, `${D1_MODE} AND ${ACTIVE_USER}`, [userId]),
         this.db.prepare('INSERT INTO digest_chunks(user_id,run_id,chunk_index,payload_hash) VALUES(?,?,?,?)').bind(userId, runId, chunkIndex, hash),
         ...items.flatMap(i => [this.upsertArticle(i.article), this.db.prepare(`INSERT INTO digest_items(user_id,run_id,pmid,relevance,reason,source,disposition)
           VALUES(?,?,?,?,?,?,?)`).bind(userId, runId, i.article.pmid, i.relevance, i.reason, i.source, i.disposition)]),
-      ]);
+        clear(this.db),
+      ], 'Items require D1 mode and an active user');
     } catch (error) {
       // A simultaneous identical request may have committed while we awaited the batch.
       if ((await prior())?.payload_hash === hash) return;
