@@ -20,6 +20,8 @@ import {
 import { logger } from "./logger.js";
 import { stripArgSeparator } from "./util.js";
 import type { Paper, ScoredPaper } from "./types.js";
+import { backendFromEnv } from "./backend/client.js";
+import { needsAttention, runMultiuserDigest } from "./multiuser/orchestrator.js";
 
 const STATE_PATH = "state.json";
 
@@ -31,6 +33,8 @@ interface CommonFlags {
   rescore: boolean;
   cachePath?: string;
   to?: string;
+  backend: "legacy" | "d1";
+  user?: string;
 }
 
 async function main(): Promise<void> {
@@ -45,6 +49,8 @@ async function main(): Promise<void> {
       rescore: { type: "boolean", default: false },
       cache: { type: "string" },
       to: { type: "string" },
+      backend: { type: "string", default: "legacy" },
+      user: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -71,15 +77,21 @@ async function main(): Promise<void> {
     rescore: Boolean(values.rescore),
     cachePath: values.cache,
     to: values.to,
+    backend: parseBackend(values.backend),
+    user: values.user,
   };
 
   if (flags.fromCache && flags.rescore) {
     throw new Error("--from-cache and --rescore are mutually exclusive.");
   }
+  if (flags.user !== undefined && flags.backend !== "d1") {
+    throw new Error("--user selects a D1 user and requires --backend d1.");
+  }
 
   if (command === "digest") {
-    await runDigest(flags);
+    await (flags.backend === "d1" ? runD1Digest(flags) : runDigest(flags));
   } else if (command === "search") {
+    if (flags.backend === "d1") throw new Error("search runs on the legacy path only.");
     const topic = positionals.slice(1).join(" ").trim();
     if (!topic && !flags.fromCache && !flags.rescore) {
       throw new Error('search requires a topic, e.g. search "glioma MRI"');
@@ -170,6 +182,36 @@ async function runDigest(flags: CommonFlags): Promise<void> {
   } finally {
     reportRun(deps, "Digest");
   }
+}
+
+/**
+ * The multi-user digest through the Worker: users, history, votes and destinations come from D1.
+ * The Worker refuses writes unless D1 is the operating mode; --dry-run only reads.
+ */
+async function runD1Digest(flags: CommonFlags): Promise<void> {
+  if (flags.fromCache || flags.rescore || flags.saveCache || flags.to !== undefined) {
+    throw new Error("--backend d1 reads users, history and destinations from D1: --from-cache, --rescore, --save-cache and --to do not apply.");
+  }
+  const env = loadEnv();
+  const summary = await runMultiuserDigest({
+    cfg: config,
+    pubmed: new PubMedClient({ email: env.EUTILS_EMAIL, apiKey: env.NCBI_API_KEY }),
+    backend: backendFromEnv(env),
+    scorerFor: () => makeAnthropicScorer(env.ANTHROPIC_API_KEY, config.model, config.batchSize),
+    print: (text) => process.stdout.write(text),
+  }, { title: digestTitle(), dryRun: flags.dryRun, limit: flags.limit, user: flags.user });
+  // Run ids and states only: slugs and user ids stay out of public job logs.
+  for (const o of summary.outcomes) {
+    logger.info("user digest", { state: o.state, runId: o.runId, messageId: o.messageId, error: o.error, ...(o.metrics?.toFields(config.pricing) ?? {}) });
+    if (o.metrics) writeStepSummary(o.metrics.toMarkdown(config.pricing, `Digest D1 (${o.state})`));
+  }
+  if (summary.halted) logger.error("digest stopped: the operating mode changed during the run");
+  if (summary.halted || summary.outcomes.some(needsAttention)) process.exitCode = 1;
+}
+
+function parseBackend(value: string | undefined): "legacy" | "d1" {
+  if (value === "legacy" || value === "d1") return value;
+  throw new Error(`--backend must be legacy or d1, got "${value}"`);
 }
 
 async function runSearch(topic: string, flags: CommonFlags): Promise<void> {
@@ -289,6 +331,8 @@ function printHelp(): void {
       "  --from-cache       Reproduce desde el caché (sin PubMed ni Anthropic).",
       "  --rescore          Re-puntúa los papers cacheados (sin PubMed; sí usa Anthropic).",
       "  --cache <ruta>     Ruta del caché (por defecto .cache/<comando>.json).",
+      "  --backend d1       Digest multiusuario vía el Worker (D1). Por defecto: legacy.",
+      "  --user <slug>      Con --backend d1: solo ese usuario (--dry-run lee usuarios pausados).",
       "  -h, --help         Muestra esta ayuda.",
       "",
       "La cobertura (revistas y búsquedas permanentes) se edita en profile.yaml.",

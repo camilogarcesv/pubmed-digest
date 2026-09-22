@@ -8,6 +8,7 @@
 //                                         # profile and compare metrics before/after (pays
 //                                         # Anthropic once; this is the tuning loop)
 //   pnpm eval -- --cache .cache/x.json --k 15
+//   pnpm eval -- --user <slug>            # votes and scores of one D1 user (DIGEST_SERVICE_SECRET)
 //
 // The report goes to stdout; logs to stderr, as everywhere else.
 
@@ -28,6 +29,7 @@ import {
 } from "./votes.js";
 import { logger } from "./logger.js";
 import { stripArgSeparator } from "./util.js";
+import { backendFromEnv } from "./backend/client.js";
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
@@ -37,6 +39,7 @@ async function main(): Promise<void> {
       cache: { type: "string", default: ".cache/digest.json" },
       rescore: { type: "boolean", default: false },
       k: { type: "string", default: "10" },
+      user: { type: "string" },
     },
   });
 
@@ -45,6 +48,19 @@ async function main(): Promise<void> {
   const threshold = profile.threshold ?? config.threshold;
   const k = Number(values.k);
   if (!Number.isFinite(k) || k <= 0) throw new Error(`--k must be a positive number`);
+
+  // D1: the user's votes already carry their title and the score from that user's own history.
+  if (values.user !== undefined) {
+    if (values.votes || values.rescore) throw new Error("--user reads votes and scores from D1; it cannot be combined with --votes or --rescore.");
+    const backend = backendFromEnv(env);
+    const user = await backend.context(values.user);
+    const votes = await backend.evalContext(user.userId);
+    const joined = votes.flatMap((v) => v.score === null ? [] : [{ pmid: v.pmid, title: v.title, value: v.value, score: v.score }]);
+    const userThreshold = user.profile.profile.threshold ?? config.threshold;
+    logger.info("votes loaded", { count: votes.length, source: "d1" });
+    process.stdout.write(renderReport(computeEvalMetrics(joined, userThreshold, k), userThreshold, votes.length - joined.length));
+    return;
+  }
 
   // 1. Votes: local dump beats the Worker, so eval works offline and in tests.
   let votes: Vote[];

@@ -26,6 +26,7 @@
     "import:user": "tsx src/operations/import-user.ts",
     "ledger:extend": "tsx src/operations/extend-ledger.ts",
     "votes:reconcile": "tsx src/operations/reconcile-votes.ts",
+    "digest:reconcile": "tsx src/operations/reconcile-digest.ts",
     "state:repair": "tsx src/repair-state.ts",
     "eval": "tsx src/eval.ts"
   },

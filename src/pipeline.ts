@@ -40,7 +40,7 @@ export interface DigestOptions {
   store: SeenStore;
 }
 
-interface Source {
+export interface Source {
   label: string;
   term: string;
 }
@@ -53,6 +53,61 @@ export function sourcesFor(profile: Profile): Source[] {
   ];
 }
 
+/** Outcome of one PubMed search, shared by every source (and every user) with the same term. */
+export type SourceResults = Map<string, ESearchResult | Error>;
+
+/** Search each distinct term once; a failure is kept as that term's result, never thrown. */
+export async function searchSources(deps: Pick<PipelineDeps, "cfg" | "pubmed">, terms: string[]): Promise<SourceResults> {
+  const results: SourceResults = new Map();
+  for (const term of new Set(terms)) {
+    try {
+      results.set(term, await deps.pubmed.esearch(term, { reldate: deps.cfg.lookbackDays, retmax: deps.cfg.esearchRetmax }));
+    } catch (err) {
+      results.set(term, err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+  return results;
+}
+
+/**
+ * Turn search results into one profile's new PMIDs, in source order (the first source that lists a
+ * PMID labels it), counting the profile's metrics. `describe` names a source in logs.
+ */
+export function collectFromResults(
+  metrics: RunMetrics,
+  sources: Source[],
+  results: SourceResults,
+  isSeen: (pmid: string) => boolean,
+  describe: (s: Source, index: number) => string = (s) => s.label,
+): Map<string, string> {
+  const pmidToSource = new Map<string, string>();
+  sources.forEach((s, index) => {
+    const r = results.get(s.term);
+    if (!r || r instanceof Error) {
+      metrics.sourcesFailed++;
+      logger.error("esearch failed, skipping source", { source: describe(s, index), error: String(r) });
+      return;
+    }
+    const { ids, count } = r;
+    metrics.sourcesOk++;
+    metrics.found += ids.length;
+    if (count > ids.length) {
+      metrics.sourcesTruncated++;
+      logger.warn("source truncated by retmax; widen retmax or narrow the query", {
+        source: describe(s, index),
+        returned: ids.length,
+        total: count,
+      });
+    }
+    logger.info("esearch", { source: describe(s, index), found: ids.length, total: count });
+    for (const id of ids) {
+      if (isSeen(id)) continue; // handled in a previous run
+      if (!pmidToSource.has(id)) pmidToSource.set(id, s.label); // dedupe within this run
+    }
+  });
+  return pmidToSource;
+}
+
 /**
  * Collect new PMIDs across every source. Individual failures are tolerated (one dead journal
  * shouldn't cancel the week), but a total failure throws: otherwise the run would report
@@ -63,37 +118,8 @@ async function collectPmids(
   sources: Source[],
   isSeen: (pmid: string) => boolean,
 ): Promise<Map<string, string>> {
-  const { cfg, pubmed, metrics } = deps;
-  const pmidToSource = new Map<string, string>();
-
-  for (const s of sources) {
-    try {
-      const { ids, count } = await pubmed.esearch(s.term, {
-        reldate: cfg.lookbackDays,
-        retmax: cfg.esearchRetmax,
-      });
-      metrics.sourcesOk++;
-      metrics.found += ids.length;
-      if (count > ids.length) {
-        metrics.sourcesTruncated++;
-        logger.warn("source truncated by retmax; widen retmax or narrow the query", {
-          source: s.label,
-          returned: ids.length,
-          total: count,
-        });
-      }
-      logger.info("esearch", { source: s.label, found: ids.length, total: count });
-      for (const id of ids) {
-        if (isSeen(id)) continue; // handled in a previous run
-        if (!pmidToSource.has(id)) pmidToSource.set(id, s.label); // dedupe within this run
-      }
-    } catch (err) {
-      metrics.sourcesFailed++;
-      logger.error("esearch failed, skipping source", { source: s.label, error: String(err) });
-    }
-  }
-
-  if (sources.length > 0 && metrics.sourcesFailed === sources.length) {
+  const pmidToSource = collectFromResults(deps.metrics, sources, await searchSources(deps, sources.map((s) => s.term)), isSeen);
+  if (sources.length > 0 && deps.metrics.sourcesFailed === sources.length) {
     throw new Error(
       `Every source failed (${sources.length}/${sources.length}). PubMed may be down or the ` +
         "query/credentials may be wrong — refusing to report an empty digest as success.",
@@ -131,7 +157,7 @@ export function prefilter(deps: PipelineDeps, papers: Paper[]): Paper[] {
 }
 
 /** Score everything, then re-rank the finalists against each other. */
-async function scoreAndRerank(
+export async function scoreAndRerank(
   deps: PipelineDeps,
   papers: Paper[],
   topic?: string,
