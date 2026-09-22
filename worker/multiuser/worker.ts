@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { LedgerExtensionRepository } from './ledger-extensions.js';
+import { LedgerManifest, LedgerBlock } from '../../src/multiuser/ledger-extension.js';
 import { DomainError, SeenCheck, SystemMode, UserId } from '../../src/multiuser/contracts.js';
 import { ImportRepository } from './imports.js';
 import { ImportLease, ImportManifest } from '../../src/multiuser/import-contracts.js';
@@ -73,6 +75,29 @@ export default {
         if (path === '/internal/v1/imports' && request.method === 'POST') {
           const { owner, manifest } = z.strictObject({ owner: z.uuid(), manifest: ImportManifest }).parse(await readJson(request));
           return json(await imports.create(owner, manifest));
+        }
+        const ledger = /^\/internal\/v1\/imports\/users\/([^/]+)\/ledger(?:-extensions(?:\/([^/]+)(?:\/(blocks|finalize|verify))?)?)?$/.exec(path);
+        if (ledger) {
+          const userId = UserId.parse(ledger[1]), repository = new LedgerExtensionRepository(env.DB);
+          if (request.method === 'GET' && path.endsWith('/ledger')) return json(await repository.snapshot(userId));
+          if (!ledger[2] && request.method === 'POST' && path.endsWith('/ledger-extensions')) {
+            const { owner, manifest } = z.strictObject({ owner: z.uuid(), manifest: LedgerManifest }).parse(await readJson(request));
+            return json(await repository.create(owner, userId, manifest));
+          }
+          if (ledger[2]) {
+            const id = z.uuid().parse(ledger[2]);
+            if (!ledger[3] && request.method === 'GET') return json(await repository.status(userId, id));
+            if (ledger[3] === 'verify' && request.method === 'GET') return json(await repository.verify(userId, id));
+            if (ledger[3] === 'blocks' && request.method === 'POST') {
+              const { owner, block } = z.strictObject({ owner: z.uuid(), block: LedgerBlock }).parse(await readJson(request));
+              return json(await repository.put(owner, userId, id, block));
+            }
+            if (ledger[3] === 'finalize' && request.method === 'POST') {
+              const { owner } = ImportLease.parse(await readJson(request));
+              return json(await repository.finalize(owner, userId, id));
+            }
+          }
+          throw new RequestError(404, 'not_found', 'Ruta no encontrada.');
         }
         // Legacy vote reconciliation: KV capture -> D1 copy, same credential and lease as the import.
         const reconcile = /^\/internal\/v1\/imports\/users\/([^/]+)\/vote-reconciliations(?:\/(plan|verify))?$/.exec(path);

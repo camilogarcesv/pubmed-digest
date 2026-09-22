@@ -6,8 +6,8 @@ import { ImportRecord, canonical, checksum } from './import-contracts.js';
 // capture into D1 and seals the exact before/after of every vote it changed. Runtime-
 // independent: shared by the operator CLI (Node) and the Worker.
 
-/** D1 Free allows 50 queries per invocation; a verified step uses at most 48 queries. */
-export const MAX_STEP_CHANGES = 25;
+/** D1 Free allows 50 queries per invocation; a verified step uses at most 43 queries. */
+export const MAX_STEP_CHANGES = 20;
 export const MAX_CAPTURED_VOTES = 2000;
 
 export const CapturedVote = ImportRecord.options[1].omit({ kind: true });

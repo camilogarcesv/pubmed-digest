@@ -79,7 +79,7 @@ export class VoteReconciliationRepository {
     const capture = await this.capture(input);
     const { plan, current, destinationOf, sessionId } = await this.prepare(userId, capture);
     // Refuse to extend a chain whose current contents no longer prove the sealed import.
-    await new ImportRepository(this.db).verify(sessionId);
+    const verifiedState = await new ImportRepository(this.db).verifiedState(sessionId);
     const reused = await this.db.prepare(`SELECT 1 FROM vote_reconciliations WHERE capture_id=?
       AND (user_id<>? OR capture_checksum<>? OR captured_at<>? OR code_sha<>?) LIMIT 1`)
       .bind(capture.id, userId, capture.checksum, capture.capturedAt, capture.codeSha).first();
@@ -93,12 +93,13 @@ export class VoteReconciliationRepository {
     try {
       await this.db.batch([
         // Nothing may have changed since this plan was read: same votes, same chain head.
-        this.guard(owner, `(${votesSnapshotSql})=? AND (SELECT coalesce(max(sequence),0) FROM vote_reconciliations WHERE user_id=?)=?
+        this.guard(owner, verifiedState.snapshots.map(s => `(${s.sql})=?`).join(' AND ') + ` AND (${votesSnapshotSql})=? AND (SELECT coalesce(max(sequence),0) FROM vote_reconciliations WHERE user_id=?)=?
+          AND NOT EXISTS(SELECT 1 FROM ledger_extensions WHERE user_id=? AND status='open')
           AND EXISTS(SELECT 1 FROM users WHERE id=? AND status='paused')
           AND EXISTS(SELECT 1 FROM import_sessions WHERE user_id=? AND status='finalized')
           AND NOT EXISTS(SELECT 1 FROM vote_reconciliations WHERE capture_id=?
             AND (user_id<>? OR capture_checksum<>? OR captured_at<>? OR code_sha<>?))`,
-        [userId, current.raw, userId, steps.length, userId, userId, capture.id, userId, capture.checksum, capture.capturedAt, capture.codeSha]),
+        [...verifiedState.snapshots.flatMap(s => [s.userId, s.raw]), userId, current.raw, userId, steps.length, userId, userId, userId, capture.id, userId, capture.checksum, capture.capturedAt, capture.codeSha]),
         this.db.prepare(`INSERT INTO vote_reconciliations(id,user_id,sequence,capture_id,capture_checksum,captured_at,code_sha,counts_json,changes_json,created_at)
           VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(id, userId, sequence, capture.id, capture.checksum, capture.capturedAt, capture.codeSha,
           JSON.stringify({ ...plan.counts, step: step.length }), JSON.stringify(step), new Date().toISOString()),

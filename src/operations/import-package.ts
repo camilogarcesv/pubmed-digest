@@ -5,7 +5,7 @@ import { Pmid, Timestamp } from '../multiuser/contracts.js';
 
 export const packageFiles = { ledger: 'ledger.json', profile: 'profile.yaml', config: 'config.ts', votes: 'votes.json', backup: 'backup.sql', identity: 'identity.json' } as const;
 export type Capture = { -readonly [K in keyof typeof packageFiles]: string };
-const Ledger = z.object({ version: z.literal(2), papers: z.record(Pmid, z.strictObject({
+export const Ledger = z.object({ version: z.literal(2), papers: z.record(Pmid, z.strictObject({
   title: z.string().max(8000).optional(), firstSeen: Timestamp,
   relevance: z.number().int().min(0).max(10).optional(), delivered: z.boolean(),
 })), updatedAt: z.string().optional() }).strict();
