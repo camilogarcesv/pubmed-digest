@@ -5,8 +5,8 @@ export const businessTables = [
   'digest_runs', 'digest_chunks', 'digest_items', 'user_articles',
   'delivery_messages', 'delivery_resolutions', 'votes', 'data_imports', 'vote_reconciliations', 'ledger_extensions', 'ledger_extension_blocks',
 ] as const;
-export const migrations = ['0001_multiuser.sql', '0002_draft_guards.sql', '0003_source_order.sql', '0004_operation_lock.sql', '0005_import_sessions.sql', '0006_vote_reconciliations.sql', '0007_ledger_extensions.sql'];
-export const operationTables = ['operation_lock', 'operation_assertions', 'import_sessions', 'import_blocks'];
+export const migrations = ['0001_multiuser.sql', '0002_draft_guards.sql', '0003_source_order.sql', '0004_operation_lock.sql', '0005_import_sessions.sql', '0006_vote_reconciliations.sql', '0007_ledger_extensions.sql', '0008_run_lifecycle.sql'];
+export const operationTables = ['operation_lock', 'operation_assertions', 'import_sessions', 'import_blocks', 'digest_assertions'];
 const hexId = z.string().regex(/^[a-f0-9]{32}$/).refine(s => !/^0+$/.test(s));
 const uuid = z.uuid().refine(s => s !== '00000000-0000-0000-0000-000000000000');
 

@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { LedgerExtensionRepository } from './ledger-extensions.js';
 import { LedgerManifest, LedgerBlock } from '../../src/multiuser/ledger-extension.js';
-import { DomainError, SeenCheck, SystemMode, UserId } from '../../src/multiuser/contracts.js';
+import { CreateRun, DigestItem, DomainError, Period, SeenCheck, SystemMode, UserId } from '../../src/multiuser/contracts.js';
 import { ImportRepository } from './imports.js';
 import { ImportLease, ImportManifest } from '../../src/multiuser/import-contracts.js';
 import { VoteReconciliationRepository } from './reconciliations.js';
 import { D1DigestRepository } from './repository.js';
+import { RunRepository, type TelegramFetch } from './runs.js';
 
 // Binding shape comes from generated configuration; this handler works in either entrypoint.
 type BackendEnv = Pick<Cloudflare.Env, 'DB'> & { DIGEST_SERVICE_SECRET?: string; IMPORT_SERVICE_SECRET?: string; VOTES_READ_SECRET?: string; TELEGRAM_WEBHOOK_SECRET?: string; TELEGRAM_BOT_TOKEN?: string };
@@ -53,16 +54,31 @@ function json(data: unknown, status = 200): Response {
   return Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
 }
 
-/** Separate read and administrative import capabilities; no delivery operations. */
-export default {
+/** Reads work in every mode; digest writes, deliveries and alerts only while D1 operates. */
+async function requireD1(db: D1Database): Promise<void> {
+  const row = await db.prepare('SELECT mode FROM system_controls WHERE singleton=1').first<{ mode: string }>();
+  if (row?.mode !== 'd1') throw new RequestError(409, 'mode_unavailable', 'El modo actual no admite esta operación.');
+}
+const empty = z.strictObject({});
+
+/** Separate digest, read and administrative capabilities. Telegram is reached only through fetchImpl. */
+export function createBackend(fetchImpl: TelegramFetch = (input, init) => fetch(input, init)) {
+  return {
   async fetch(request: Request, env: BackendEnv): Promise<Response> {
     const requestId = crypto.randomUUID();
     try {
       const path = new URL(request.url).pathname;
-      if (path === '/internal/v1/imports' || path.startsWith('/internal/v1/imports/')) {
+      if (path === '/internal/v1/imports' || path.startsWith('/internal/v1/imports/') || path.startsWith('/internal/v1/admin/')) {
         const secret = env.IMPORT_SERVICE_SECRET;
         if (!secret || [env.DIGEST_SERVICE_SECRET, env.VOTES_READ_SECRET, env.TELEGRAM_WEBHOOK_SECRET, env.TELEGRAM_BOT_TOKEN].includes(secret)
           || !(await authorized(request, secret))) throw new RequestError(401, 'unauthorized', 'No autorizado.');
+        const resolve = /^\/internal\/v1\/admin\/users\/([^/]+)\/digest-runs\/([^/]+)\/messages\/([^/]+)\/resolve$/.exec(path);
+        if (resolve && request.method === 'POST') {
+          await requireD1(env.DB);
+          const runs = new RunRepository(env.DB, { token: env.TELEGRAM_BOT_TOKEN, fetch: fetchImpl });
+          return json(await runs.resolve(UserId.parse(resolve[1]), resolve[2], resolve[3], await readJson(request)));
+        }
+        if (path.startsWith('/internal/v1/admin/')) throw new RequestError(404, 'not_found', 'Ruta no encontrada.');
         const imports = new ImportRepository(env.DB);
         if (['/internal/v1/imports/lease', '/internal/v1/imports/lease/renew'].includes(path) && request.method === 'POST') {
           const { owner } = ImportLease.parse(await readJson(request));
@@ -141,6 +157,42 @@ export default {
       if (request.method === 'POST' && path === '/internal/v1/seen/check') return json({ seen: await repository.seen(SeenCheck.parse(await readJson(request))) });
       const match = /^\/internal\/v1\/users\/([^/]+)\/eval-context$/.exec(path);
       if (request.method === 'GET' && match) return json({ votes: await repository.evalContext(UserId.parse(match[1])) });
+      const runs = new RunRepository(env.DB, { token: env.TELEGRAM_BOT_TOKEN, fetch: fetchImpl });
+      const context = /^\/internal\/v1\/users\/by-slug\/([^/]+)\/context$/.exec(path);
+      if (request.method === 'GET' && context) return json({ user: await runs.context(context[1]) });
+      if (request.method === 'POST' && path === '/internal/v1/ops/alerts') {
+        await requireD1(env.DB);
+        return json(await runs.opsAlert(await readJson(request)));
+      }
+      const route = /^\/internal\/v1\/users\/([^/]+)\/digest-runs(?:\/([^/]+)(?:\/(items\/\d{1,3}|prepare|abort|destinations\/[^/]+\/deliver))?)?$/.exec(path);
+      if (route) {
+        const userId = UserId.parse(route[1]), runId = route[2], action = route[3];
+        if (request.method === 'GET' && !runId) {
+          return json({ runs: await runs.runs(userId, Period.parse(new URL(request.url).searchParams.get('period'))) });
+        }
+        if (request.method === 'GET' && runId && !action) return json(await runs.progress(userId, runId));
+        if (request.method === 'GET') throw new RequestError(405, 'method_not_allowed', 'Método no permitido.');
+        await requireD1(env.DB);
+        if (request.method === 'POST' && !runId) {
+          const run = CreateRun.parse(await readJson(request));
+          if (run.userId !== userId) throw new DomainError('invalid_input', 'Owner mismatch');
+          return json({ run: await repository.createRun(run) });
+        }
+        if (request.method === 'PUT' && action?.startsWith('items/')) {
+          const { items } = z.strictObject({ items: z.array(DigestItem) }).parse(await readJson(request));
+          await repository.putItems(userId, z.uuid().parse(runId), Number(action.slice(6)), items);
+          return json({ stored: true });
+        }
+        if (request.method === 'POST' && action === 'prepare') return json(await runs.prepare(userId, z.uuid().parse(runId), await readJson(request)));
+        if (request.method === 'POST' && action === 'abort') {
+          empty.parse(await readJson(request));
+          return json(await runs.abort(userId, z.uuid().parse(runId)));
+        }
+        if (request.method === 'POST' && action?.startsWith('destinations/')) {
+          empty.parse(await readJson(request));
+          return json(await runs.deliverNext(userId, z.uuid().parse(runId), action.split('/')[1]));
+        }
+      }
       throw new RequestError(404, 'not_found', 'Ruta no encontrada.');
     } catch (error) {
       let status = 500, code = 'internal_error', message = 'Error interno.';
@@ -155,4 +207,7 @@ export default {
       return json({ error: { code, message, requestId } }, status);
     }
   },
-} satisfies ExportedHandler<BackendEnv>;
+  };
+}
+
+export default createBackend();

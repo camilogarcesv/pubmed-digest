@@ -82,8 +82,13 @@ function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure
     const auth = new Headers(init?.headers).get('authorization');
     if (path === '/votes') return auth === `Bearer ${input.VOTES_READ_SECRET}` ? Response.json({ votes: [] }) : new Response('', { status: 403 });
     if (path === '/internal/v1/imports' || path.startsWith('/internal/v1/imports/')) return new Response('', { status: auth === `Bearer ${input.IMPORT_SERVICE_SECRET}` ? 400 : 401 });
+    if (path.startsWith('/internal/v1/admin/')) return new Response('', { status: auth === `Bearer ${input.IMPORT_SERVICE_SECRET}` ? 409 : 401 });
     if (options.smokeFailure) return new Response('', { status: 500 });
     if (auth !== `Bearer ${input.DIGEST_SERVICE_SECRET}`) return new Response('', { status: 401 });
+    if (path.includes('/by-slug/')) return new Response('', { status: 404, headers: { 'cache-control': 'no-store' } });
+    if (path.includes('/digest-runs') || path.endsWith('/ops/alerts')) {
+      return init?.method === 'GET' ? Response.json({ runs: [] }, { headers: { 'cache-control': 'no-store' } }) : new Response('', { status: 409 });
+    }
     const data = path.endsWith('/mode') ? { mode: 'legacy' } : path.endsWith('/seen/check') ? { seen: [false] }
       : path.endsWith('/eval-context') ? { votes: [] } : { users: [] };
     return Response.json(data, { headers: { 'cache-control': 'no-store' } });
@@ -121,6 +126,14 @@ it('restores the previous Worker when reconciliation is reachable without the im
   const original = f.fetch;
   f.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => new URL(String(url)).pathname.includes('/vote-reconciliations/')
     ? new Response('', { status: 400 }) : original(url, init)) as typeof fetch;
+  await expect(deployWorker(input, f)).rejects.toMatchObject({ stage: 'smoke', recovery: 'previous_restored' });
+  expect(f.current()).toBe(previous);
+});
+it('restores the previous Worker when a digest write is not inert in legacy mode', async () => {
+  const f = fixture();
+  const original = f.fetch;
+  f.fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => new URL(String(url)).pathname.endsWith('/prepare')
+    && new Headers(init?.headers).get('authorization') === `Bearer ${input.DIGEST_SERVICE_SECRET}` ? Response.json({}) : original(url, init)) as typeof fetch;
   await expect(deployWorker(input, f)).rejects.toMatchObject({ stage: 'smoke', recovery: 'previous_restored' });
   expect(f.current()).toBe(previous);
 });

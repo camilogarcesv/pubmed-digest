@@ -30,7 +30,25 @@ export function ledger(userId: string, pmid = '123', relevance = 9): z.infer<typ
 export function item(pmid = '123'): z.infer<typeof DigestItem> {
   return { article: article(pmid), relevance: 9, reason: 'Relevante', source: 'AJNR', disposition: 'selected' };
 }
-export function run(userId = alice, expectedItems = 1) {
-  return { id: crypto.randomUUID(), userId, profileVersion: 1, runKey: 'weekly:2026-W38', payloadHash: 'a'.repeat(64),
-    kind: 'weekly' as const, expectedItems, createdAt: timestamp };
+export function run(userId = alice, expectedItems = 1, attempt = 1) {
+  return { id: crypto.randomUUID(), userId, profileVersion: 1, runKey: `weekly:2026-W38:${attempt}`, payloadHash: 'a'.repeat(64),
+    kind: 'weekly' as const, expectedItems, createdAt: timestamp, period: '2026-W38' as string | null };
+}
+/** Digest writes require D1 to be the operating mode; tests reset it to legacy before each case. */
+export async function d1Mode(mode: 'legacy' | 'maintenance' | 'd1' = 'd1'): Promise<void> {
+  await env.DB.prepare('UPDATE system_controls SET mode=? WHERE singleton=1').bind(mode).run();
+}
+/** Walk a run through valid lifecycle states with direct SQL, bypassing the repository. */
+export async function advanceRun(runId: string, ...statuses: string[]): Promise<void> {
+  for (const status of statuses) await env.DB.prepare('UPDATE digest_runs SET status=? WHERE id=?').bind(status, runId).run();
+}
+/** Empty every table in FK order and return to legacy mode. */
+export async function resetDatabase(): Promise<void> {
+  await env.DB.batch([
+    ...['digest_assertions', 'ledger_extension_blocks', 'ledger_extensions', 'vote_reconciliations', 'import_blocks', 'import_sessions', 'operation_assertions',
+      'operation_lock', 'delivery_resolutions', 'votes', 'delivery_messages', 'user_articles', 'digest_items', 'digest_chunks',
+      'digest_runs', 'data_imports', 'destinations', 'profile_sources', 'profile_versions', 'users', 'articles']
+      .map(table => env.DB.prepare(`DELETE FROM ${table}`)),
+    env.DB.prepare("UPDATE system_controls SET mode='legacy' WHERE singleton=1"),
+  ]);
 }

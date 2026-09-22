@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { applyD1Migrations } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { computeEvalMetrics } from '../../src/votes.js';
-import { alice, bob, aliceDestination, bobDestination, article, item, ledger, profile, run, seedUsers, timestamp } from './fixtures.js';
+import { alice, bob, aliceDestination, bobDestination, advanceRun, article, d1Mode, item, ledger, profile, run, seedUsers, timestamp } from './fixtures.js';
 
 describe('D1 tenant isolation and migration', () => {
   it('applies from empty and replays migrations without losing data', async () => {
@@ -28,7 +28,7 @@ describe('D1 tenant isolation and migration', () => {
     expect((await db.prepare('SELECT * FROM d1_migrations').all()).results).toHaveLength(env.TEST_MIGRATIONS.length);
     await applyD1Migrations(db, env.TEST_MIGRATIONS);
     expect((await db.prepare('SELECT * FROM d1_migrations ORDER BY id LIMIT 1').all()).results).toEqual(firstMigration);
-    expect((await db.prepare('SELECT name FROM sqlite_schema WHERE type=\'trigger\'').all()).results).toHaveLength(13);
+    expect((await db.prepare('SELECT name FROM sqlite_schema WHERE type=\'trigger\'').all()).results).toHaveLength(26);
   });
 
   it('keeps seen, score, vote and eval independent for the same PMID', async () => {
@@ -62,6 +62,7 @@ describe('D1 tenant isolation and migration', () => {
     const repository = await seedUsers();
     await repository.importLedger(alice, [{ article: article(), entry: ledger(alice) }]);
     await expect(repository.importVote({ userId: bob, destinationId: aliceDestination, pmid: '123', value: 0, votedAt: timestamp })).rejects.toThrow();
+    await d1Mode();
     const created = await repository.createRun(run());
     await expect(repository.getRun(bob, created.id)).rejects.toMatchObject({ code: 'not_found' });
     await expect(env.DB.prepare("INSERT INTO digest_chunks VALUES(?,?,0,?)").bind(bob, created.id, 'b'.repeat(64)).run()).rejects.toThrow();
@@ -109,15 +110,19 @@ describe('D1 tenant isolation and migration', () => {
 describe('draft idempotency and reservations', () => {
   it('enforces both draft triggers for direct writes that bypass the repository', async () => {
     const repository = await seedUsers();
+    await d1Mode();
     const created = await repository.createRun(run(alice, 2));
     await repository.putItems(alice, created.id, 0, [item()]);
     await repository.importLedger(alice, [{ article: article('124'), entry: ledger(alice, '124') }]);
-    for (const status of ['prepared', 'delivering', 'needs_reconciliation', 'succeeded', 'aborted']) {
-      await env.DB.prepare('UPDATE digest_runs SET status=? WHERE id=?').bind(status, created.id).run();
+    const aborted = await repository.createRun({ ...run(alice, 2), runKey: 'search:1', kind: 'search', period: null });
+    const attempts: [string, string][] = [['prepared', created.id], ['delivering', created.id], ['needs_reconciliation', created.id],
+      ['succeeded', created.id], ['aborted', aborted.id]];
+    for (const [status, id] of attempts) {
+      await advanceRun(id, status);
       await expect(env.DB.prepare('INSERT INTO digest_chunks VALUES(?,?,1,?)')
-        .bind(alice, created.id, 'a'.repeat(64)).run()).rejects.toThrow('run is not a draft');
+        .bind(alice, id, 'a'.repeat(64)).run()).rejects.toThrow('run is not a draft');
       await expect(env.DB.prepare("INSERT INTO digest_items VALUES(?,?,'124',9,NULL,'test','selected')")
-        .bind(alice, created.id).run()).rejects.toThrow('run is not a draft');
+        .bind(alice, id).run()).rejects.toThrow('run is not a draft');
     }
     expect((await env.DB.prepare('SELECT * FROM digest_chunks').all()).results).toHaveLength(1);
     expect((await env.DB.prepare('SELECT * FROM digest_items').all()).results).toHaveLength(1);
@@ -125,23 +130,25 @@ describe('draft idempotency and reservations', () => {
 
   it('retries by stable key, rejects changed input, and keeps the ledger untouched', async () => {
     const repository = await seedUsers();
+    await d1Mode();
     const input = run();
     const first = await repository.createRun(input);
     expect((await repository.createRun({ ...input, id: crypto.randomUUID() })).id).toBe(first.id);
     await expect(repository.createRun({ ...input, payloadHash: 'b'.repeat(64) })).rejects.toMatchObject({ code: 'conflict' });
-    await expect(repository.createRun({ ...input, kind: 'search' })).rejects.toMatchObject({ code: 'conflict' });
+    await expect(repository.createRun({ ...input, kind: 'search', period: null })).rejects.toMatchObject({ code: 'conflict' });
     await repository.putItems(alice, first.id, 0, [item()]);
     await repository.putItems(alice, first.id, 0, [item()]);
     await expect(repository.putItems(alice, first.id, 0, [item('124')])).rejects.toMatchObject({ code: 'conflict' });
     expect((await env.DB.prepare('SELECT * FROM user_articles').all()).results).toEqual([]);
     expect((await env.DB.prepare('SELECT * FROM digest_items').all()).results).toHaveLength(1);
     expect(await repository.seen({ pairs: [{ userId: alice, pmid: '123' }, { userId: bob, pmid: '123' }] })).toEqual([true, false]);
-    await env.DB.prepare("UPDATE digest_runs SET status='needs_reconciliation' WHERE id=?").bind(first.id).run();
+    await advanceRun(first.id, 'prepared', 'delivering', 'needs_reconciliation');
     expect(await repository.seen({ pairs: [{ userId: alice, pmid: '123' }] })).toEqual([true]);
   });
 
   it('keeps chunks atomic when a later item exceeds expected count', async () => {
     const repository = await seedUsers();
+    await d1Mode();
     const created = await repository.createRun(run());
     await expect(repository.putItems(alice, created.id, 0, [item(), item('124')])).rejects.toThrow('too many run items');
     for (const table of ['articles', 'digest_items', 'digest_chunks']) expect((await env.DB.prepare(`SELECT * FROM ${table}`).all()).results).toHaveLength(0);
@@ -149,6 +156,7 @@ describe('draft idempotency and reservations', () => {
 
   it('never inserts items into a non-draft run and releases aborted reservations only', async () => {
     const repository = await seedUsers();
+    await d1Mode();
     const created = await repository.createRun(run(alice, 2));
     await repository.putItems(alice, created.id, 0, [item()]);
     await env.DB.prepare("UPDATE digest_runs SET status='aborted' WHERE id=?").bind(created.id).run();
@@ -158,6 +166,7 @@ describe('draft idempotency and reservations', () => {
 
   it('supports maximum chunks/pairs without per-row query fan-out in seen', async () => {
     const repository = await seedUsers();
+    await d1Mode();
     const created = await repository.createRun(run(alice, 15));
     await repository.putItems(alice, created.id, 0, Array.from({ length: 15 }, (_, i) => item(String(i + 1))));
     const pairs = Array.from({ length: 50 }, (_, i) => ({ userId: alice, pmid: String(i + 1) }));
@@ -167,6 +176,7 @@ describe('draft idempotency and reservations', () => {
 
   it('concurrent identical chunks converge without duplicate records', async () => {
     const repository = await seedUsers();
+    await d1Mode();
     const created = await repository.createRun(run());
     await Promise.all([repository.putItems(alice, created.id, 0, [item()]), repository.putItems(alice, created.id, 0, [item()])]);
     expect((await env.DB.prepare('SELECT * FROM digest_items').all()).results).toHaveLength(1);
@@ -177,13 +187,20 @@ describe('draft idempotency and reservations', () => {
 describe('votes from delivered Telegram messages', () => {
   it('validates owner, chat, message, PMID and delivery status before recording', async () => {
     const repository = await seedUsers();
+    await d1Mode();
     const created = await repository.createRun(run());
     await repository.putItems(alice, created.id, 0, [item()]);
-    const insert = (destination: string) => env.DB.prepare(`INSERT INTO delivery_messages
-      (id,user_id,run_id,destination_id,position,kind,pmid,votable,payload_json,status,telegram_message_id,updated_at)
-      VALUES(?,?,?,?,0,'paper','123',1,'{}','sent','77',?)`).bind(crypto.randomUUID(), alice, created.id, destination, timestamp).run();
-    await expect(insert(bobDestination)).rejects.toThrow();
-    await insert(aliceDestination);
+    await advanceRun(created.id, 'prepared');
+    const message = crypto.randomUUID();
+    const insert = (destination: string, id: string) => env.DB.prepare(`INSERT INTO delivery_messages
+      (id,user_id,run_id,destination_id,position,kind,pmid,votable,payload_json,status,updated_at)
+      VALUES(?,?,?,?,0,'paper','123',1,'{}','pending',?)`).bind(id, alice, created.id, destination, timestamp).run();
+    await expect(insert(bobDestination, crypto.randomUUID())).rejects.toThrow();
+    await insert(aliceDestination, message);
+    await advanceRun(created.id, 'delivering');
+    await env.DB.prepare("UPDATE delivery_messages SET status='sending',attempts=1 WHERE id=?").bind(message).run();
+    expect(await repository.recordTelegramVote('100', '77', '123', 1, timestamp)).toBe(false);
+    await env.DB.prepare("UPDATE delivery_messages SET status='sent',telegram_message_id='77' WHERE id=?").bind(message).run();
     expect(await repository.recordTelegramVote('200', '77', '123', 0, timestamp)).toBe(false);
     expect(await repository.recordTelegramVote('100', '78', '123', 0, timestamp)).toBe(false);
     expect(await repository.recordTelegramVote('100', '77', '124', 0, timestamp)).toBe(false);
@@ -191,7 +208,8 @@ describe('votes from delivered Telegram messages', () => {
     expect(await repository.recordTelegramVote('100', '77', '123', 0, '2026-09-14T12:00:00.000Z')).toBe(false);
     expect(await repository.evalContext(bob)).toEqual([]);
     expect((await repository.evalContext(alice))[0].value).toBe(1);
-    await env.DB.prepare("UPDATE delivery_messages SET status='unknown'").run();
+    await expect(env.DB.prepare("UPDATE delivery_messages SET status='unknown'").run()).rejects.toThrow(/already delivered|invalid message transition/);
+    await env.DB.prepare("UPDATE destinations SET status='paused' WHERE id=?").bind(aliceDestination).run();
     expect(await repository.recordTelegramVote('100', '77', '123', 0, '2026-09-16T12:00:00.000Z')).toBe(false);
   });
 });
