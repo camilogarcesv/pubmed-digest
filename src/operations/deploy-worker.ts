@@ -130,6 +130,11 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
       if ((await get(reconcile, secret, {})).status !== 401) throw new Error('Reconciliation credential isolation failed');
     }
     if ((await get(reconcile, config.IMPORT_SERVICE_SECRET, {})).status !== 400) throw new Error('Reconciliation route unavailable');
+    const ledger = `/internal/v1/imports/users/${probeUser}/ledger-extensions`;
+    for (const secret of [undefined, config.DIGEST_SERVICE_SECRET, config.VOTES_READ_SECRET]) {
+      if ((await get(ledger, secret, {})).status !== 401) throw new Error('Ledger credential isolation failed');
+    }
+    if ((await get(ledger, config.IMPORT_SERVICE_SECRET, {})).status !== 400) throw new Error('Ledger route unavailable');
     const seen = await get('/internal/v1/seen/check', config.DIGEST_SERVICE_SECRET, { pairs: [{ userId: probeUser, pmid: '1' }] });
     if (seen.status !== 200 || seen.headers.get('cache-control') !== 'no-store') throw new Error('Seen smoke failed');
     z.object({ seen: z.tuple([z.literal(false)]) }).strict().parse(await seen.json());

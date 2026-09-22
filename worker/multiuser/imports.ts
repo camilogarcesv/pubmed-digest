@@ -1,16 +1,18 @@
 import { z } from 'zod';
+import { articlesSnapshotSql, undoLedgerExtensions, ledgerProvenance } from './ledger-history.js';
 import { DomainError } from '../../src/multiuser/contracts.js';
 import { ImportBlock, ImportManifest, canonical, checksum, counts, type Manifest, type Record } from '../../src/multiuser/import-contracts.js';
 import { VoteChange, VoteState, replayReverse, type VoteMap } from '../../src/multiuser/vote-reconciliation.js';
-
+import { snapshotRows, type VerifiedSnapshot } from './verified-snapshot.js';
+export type { VerifiedSnapshot } from './verified-snapshot.js';
 const conflict = () => new DomainError('conflict', 'Import checkpoint conflict');
 /** One user's votes as the import and every reconciliation compare them. Binds user_id once. */
 export const votesSnapshotSql = "SELECT json_group_array(json_object('pmid',pmid,'value',value,'votedAt',voted_at,'destinationId',destination_id,'source',source)) FROM (SELECT * FROM votes WHERE user_id=? ORDER BY pmid)";
 
 /** Sealed reconciliation steps of one user, oldest first; sequences must be 1..n without gaps. */
-export async function reconciliationSteps(db: D1Database, userId: string): Promise<VoteChange[][]> {
-  const { results } = await db.prepare('SELECT sequence,changes_json FROM vote_reconciliations WHERE user_id=? ORDER BY sequence')
-    .bind(userId).all<{ sequence: number; changes_json: string }>();
+export async function reconciliationSteps(db: D1Database, userId: string, snapshots?: VerifiedSnapshot[]): Promise<VoteChange[][]> {
+  const results = await snapshotRows<{ sequence: number; changes_json: string }>(db, 'SELECT * FROM vote_reconciliations WHERE user_id=? ORDER BY sequence',
+    ['id', 'user_id', 'sequence', 'capture_id', 'capture_checksum', 'captured_at', 'code_sha', 'counts_json', 'changes_json', 'created_at'], userId, snapshots);
   if (results.some((r, i) => r.sequence !== i + 1)) throw conflict();
   try { return results.map(r => z.array(VoteChange).parse(JSON.parse(r.changes_json))); }
   catch { throw conflict(); }
@@ -100,7 +102,7 @@ export class ImportRepository {
   private expressions(userId: string) {
     // userId is schema-validated UUID, still bound in every SQL expression.
     return [
-      "SELECT json_group_array(json_object('pmid',a.pmid,'title',u.legacy_title,'displayTitle',a.title,'firstSeen',u.first_seen,'relevance',u.relevance,'delivered',u.delivered,'abstract',a.abstract,'metadata',a.metadata_json,'updatedAt',a.updated_at,'reason',u.reason,'source',u.source,'run',u.run_id,'deliveredAt',u.delivered_at)) FROM (SELECT * FROM user_articles WHERE user_id=? ORDER BY pmid) u JOIN articles a ON a.pmid=u.pmid",
+      articlesSnapshotSql,
       votesSnapshotSql,
       "SELECT json_group_array(json_object('id',id,'slug',slug,'email',email,'timezone',timezone,'status',status,'createdAt',created_at,'auth',auth_subject)) FROM users WHERE id=?",
       "SELECT json_group_array(json_object('version',version,'profile',config_json,'active',active,'createdAt',created_at)) FROM profile_versions WHERE user_id=?",
@@ -108,16 +110,28 @@ export class ImportRepository {
       "SELECT json_group_array(json_object('id',id,'chatId',external_id,'provider',provider,'status',status,'digest',digest_enabled,'ops',ops_enabled)) FROM destinations WHERE user_id=?",
     ].map(sql => ({ sql, userId }));
   }
-  async verify(id: string, owner?: string) {
-    const m = await this.manifest(id), u = m.identity;
+  async verifiedState(id: string) {
+    let snapshots: VerifiedSnapshot[] = [];
+    const verified = await this.verify(id, undefined, state => { snapshots = state; });
+    return { verified, snapshots };
+  }
+  async verify(id: string, owner?: string, onVerified?: (snapshots: VerifiedSnapshot[]) => void) {
+    const proof: VerifiedSnapshot[] = [];
+    const [session] = await snapshotRows<{ manifest_json: string; manifest_hash: string; status: string; user_id: string }>(this.db,
+      'SELECT * FROM import_sessions WHERE id=?', ['id', 'user_id', 'manifest_hash', 'manifest_json', 'status', 'created_at', 'finalized_at'], id, proof);
+    if (!session) throw new DomainError('not_found', 'Import not found');
+    const m = ImportManifest.parse(JSON.parse(session.manifest_json)), u = m.identity;
+    if (m.id !== id || u.id !== session.user_id || await checksum(m) !== session.manifest_hash) throw conflict();
     const expr = this.expressions(u.id);
     const snapshots = await this.db.batch<{ data: string }>(expr.map(({ sql, userId }) => this.db.prepare(`SELECT (${sql}) AS data`).bind(userId)));
     const raw = snapshots.map(s => z.string().parse(s.results[0]?.data));
     const [articles, votes, users, profiles, sources, destinations] = raw.map(s => JSON.parse(s) as { [key: string]: unknown }[]);
-    const records: Record[] = articles.map(r => ({ kind: 'article', pmid: String(r.pmid), title: r.title === null ? null : String(r.title), firstSeen: String(r.firstSeen), relevance: r.relevance as number | null, delivered: r.delivered === 1 }));
+    proof.unshift(...expr.map((e, i) => ({ ...e, raw: raw[i] })));
+    const ledger = await undoLedgerExtensions(this.db, u.id, articles, proof);
+    const records: Record[] = [...ledger.records];
     // Later reconciliations legitimately change votes. Undo their sealed steps, checking each
     // one against the current state, so the import itself is still verified exactly.
-    const steps = await reconciliationSteps(this.db, u.id);
+    const steps = await reconciliationSteps(this.db, u.id, proof);
     let imported: VoteMap = new Map();
     try {
       imported = replayReverse(new Map(votes.map(r => [String(r.pmid), VoteState.parse({ value: r.value, votedAt: r.votedAt })])), steps);
@@ -128,13 +142,14 @@ export class ImportRepository {
       || canonical(profiles) !== canonical([{ version: 1, profile: JSON.stringify(m.profile), active: 1, createdAt: m.capturedAt }])
       || canonical(sources) !== canonical(m.sources.map((s, position) => ({ ...s, position, version: 1 })))
       || canonical(destinations) !== canonical([{ id: u.destinationId, chatId: u.chatId, provider: 'telegram', status: 'paused', digest: 0, ops: 0 }])
-      || articles.some(r => r.displayTitle !== (r.title ?? '') || r.abstract !== null || r.metadata !== null || r.updatedAt !== m.capturedAt || r.reason !== null || r.source !== null || r.run !== null || r.deliveredAt !== null)
+      || articles.some(r => r.displayTitle !== (r.title ?? '') || r.abstract !== null || r.metadata !== null || (ledger.originals.has(String(r.pmid)) && r.updatedAt !== m.capturedAt) || r.reason !== null || r.source !== null || r.run !== null || r.deliveredAt !== null)
       || votes.some(r => r.destinationId !== u.destinationId || r.source !== 'legacy_import')) throw conflict();
-    const blocks = await this.db.prepare('SELECT block_index,checksum,records_json FROM import_blocks WHERE session_id=? ORDER BY block_index').bind(id).all<{ block_index: number; checksum: string; records_json: string }>();
-    if (blocks.results.length !== m.blocks.length) throw conflict();
+    const blocks = await snapshotRows<{ block_index: number; checksum: string; records_json: string }>(this.db,
+      'SELECT * FROM import_blocks WHERE session_id=? ORDER BY block_index', ['session_id', 'block_index', 'checksum', 'records_json'], id, proof);
+    if (blocks.length !== m.blocks.length) throw conflict();
     const lookup = new Map(records.map(r => [`${r.kind}:${r.pmid}`, r]));
     let total = 0;
-    for (const [i, b] of blocks.results.entries()) {
+    for (const [i, b] of blocks.entries()) {
       const saved = z.array(ImportBlock.shape.records.element).parse(JSON.parse(b.records_json));
       const actual = saved.map(r => lookup.get(`${r.kind}:${r.pmid}`));
       if (b.block_index !== i || saved.length !== m.blocks[i].count || b.checksum !== m.blocks[i].checksum
@@ -142,22 +157,23 @@ export class ImportRepository {
       total += saved.length;
     }
     if (total !== records.length) throw conflict();
-    const status = await this.status(id);
+    const status = session;
     // Reconciliation requires a sealed import; steps on an open session are never legitimate.
-    if (steps.length && status.status !== 'finalized') throw conflict();
-    const safety = await this.db.prepare(`SELECT
+    if ((steps.length || ledger.extensions) && status.status !== 'finalized') throw conflict();
+    const [safety] = await snapshotRows<{ mode: string; runs: number; messages: number }>(this.db, `WITH scope AS (SELECT ? AS id) SELECT
       (SELECT mode FROM system_controls WHERE singleton=1) AS mode,
-      (SELECT count(*) FROM digest_runs WHERE user_id=?) AS runs,
-      (SELECT count(*) FROM delivery_messages WHERE user_id=?) AS messages`).bind(u.id, u.id).first<{ mode: string; runs: number; messages: number }>();
+      (SELECT count(*) FROM digest_runs WHERE user_id=(SELECT id FROM scope)) AS runs,
+      (SELECT count(*) FROM delivery_messages WHERE user_id=(SELECT id FROM scope)) AS messages`, ['mode', 'runs', 'messages'], u.id, proof);
     if (safety?.mode !== 'legacy' || safety.runs || safety.messages) throw conflict();
-    const provenance = await this.db.prepare('SELECT * FROM data_imports WHERE user_id=? ORDER BY kind').bind(u.id).all();
+    const provenance = await snapshotRows<{ id: string }>(this.db, 'SELECT * FROM data_imports WHERE user_id=? ORDER BY id',
+      ['id', 'user_id', 'kind', 'source_ref', 'code_sha', 'checksum', 'counts_json', 'created_at'], u.id, proof);
     const expectedProvenance = (['profile', 'state', 'votes'] as const).map(kind => ({ id: `${id}:${kind}`, user_id: u.id, kind,
       source_ref: kind === 'state' ? m.stateSha : id, code_sha: m.codeSha,
       checksum: kind === 'state' ? m.files.ledger : m.files[kind], counts_json: JSON.stringify(m.counts), created_at: m.capturedAt }));
-    if (canonical(provenance.results) !== canonical(status.status === 'finalized' ? expectedProvenance : [])) throw conflict();
+    if (canonical(provenance) !== canonical(status.status === 'finalized' ? [...expectedProvenance, ...ledger.finalized.map(ledgerProvenance)].sort((a, b) => a.id.localeCompare(b.id)) : [])) throw conflict();
     if (owner && status.status !== 'finalized') {
       await this.db.batch([
-        this.guard(owner, expr.map(({ sql }) => `(${sql})=?`).join(' AND '), expr.flatMap((e, i) => [e.userId, raw[i]])),
+        this.guard(owner, proof.map(({ sql }) => `(${sql})=?`).join(' AND '), proof.flatMap(e => [e.userId, e.raw])),
         this.guard(owner, "(SELECT count(*) FROM import_blocks WHERE session_id=?)=? AND NOT EXISTS(SELECT 1 FROM digest_runs WHERE user_id=?) AND NOT EXISTS(SELECT 1 FROM delivery_messages WHERE user_id=?)", [id, m.blocks.length, u.id, u.id]),
         ...(['profile', 'state', 'votes'] as const).map(kind => this.db.prepare(`INSERT INTO data_imports(id,user_id,kind,source_ref,code_sha,checksum,counts_json,created_at)
           SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM import_sessions WHERE id=? AND status='open')`).bind(`${id}:${kind}`, u.id, kind, kind === 'state' ? m.stateSha : id, m.codeSha, kind === 'state' ? m.files.ledger : m.files[kind], JSON.stringify(m.counts), m.capturedAt, id)),
@@ -165,6 +181,7 @@ export class ImportRepository {
         this.clear(),
       ]);
     }
+    onVerified?.(proof);
     return { verified: true, manifestHash: await checksum(m), counts: m.counts };
   }
 }

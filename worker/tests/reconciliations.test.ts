@@ -131,9 +131,9 @@ describe('legacy vote reconciliation', () => {
       const value = Reflect.get(target, prop);
       return typeof value === 'function' ? value.bind(target) : value;
     } });
-    expect(await new VoteReconciliationRepository(counted).apply(f.owner, alice, big)).toMatchObject({ sequence: 1, changed: 25, remaining: 5 });
-    expect(queries).toBe(48);
-    expect(await f.reconciliations.apply(f.owner, alice, big)).toMatchObject({ sequence: 2, changed: 5, remaining: 0 });
+    expect(await new VoteReconciliationRepository(counted).apply(f.owner, alice, big)).toMatchObject({ sequence: 1, changed: 20, remaining: 10 });
+    expect(queries).toBe(43);
+    expect(await f.reconciliations.apply(f.owner, alice, big)).toMatchObject({ sequence: 2, changed: 10, remaining: 0 });
     expect(await f.reconciliations.verify(alice)).toEqual({ verified: true, reconciliations: 2, votes: 32 });
   });
 
