@@ -1,8 +1,20 @@
 import { z } from 'zod';
 import { DomainError } from '../../src/multiuser/contracts.js';
 import { ImportBlock, ImportManifest, canonical, checksum, counts, type Manifest, type Record } from '../../src/multiuser/import-contracts.js';
+import { VoteChange, VoteState, replayReverse, type VoteMap } from '../../src/multiuser/vote-reconciliation.js';
 
 const conflict = () => new DomainError('conflict', 'Import checkpoint conflict');
+/** One user's votes as the import and every reconciliation compare them. Binds user_id once. */
+export const votesSnapshotSql = "SELECT json_group_array(json_object('pmid',pmid,'value',value,'votedAt',voted_at,'destinationId',destination_id,'source',source)) FROM (SELECT * FROM votes WHERE user_id=? ORDER BY pmid)";
+
+/** Sealed reconciliation steps of one user, oldest first; sequences must be 1..n without gaps. */
+export async function reconciliationSteps(db: D1Database, userId: string): Promise<VoteChange[][]> {
+  const { results } = await db.prepare('SELECT sequence,changes_json FROM vote_reconciliations WHERE user_id=? ORDER BY sequence')
+    .bind(userId).all<{ sequence: number; changes_json: string }>();
+  if (results.some((r, i) => r.sequence !== i + 1)) throw conflict();
+  try { return results.map(r => z.array(VoteChange).parse(JSON.parse(r.changes_json))); }
+  catch { throw conflict(); }
+}
 export class ImportRepository {
   constructor(private readonly db: D1Database) {}
   private guard(owner: string, valid = '1', args: (string | number)[] = []) {
@@ -89,7 +101,7 @@ export class ImportRepository {
     // userId is schema-validated UUID, still bound in every SQL expression.
     return [
       "SELECT json_group_array(json_object('pmid',a.pmid,'title',u.legacy_title,'displayTitle',a.title,'firstSeen',u.first_seen,'relevance',u.relevance,'delivered',u.delivered,'abstract',a.abstract,'metadata',a.metadata_json,'updatedAt',a.updated_at,'reason',u.reason,'source',u.source,'run',u.run_id,'deliveredAt',u.delivered_at)) FROM (SELECT * FROM user_articles WHERE user_id=? ORDER BY pmid) u JOIN articles a ON a.pmid=u.pmid",
-      "SELECT json_group_array(json_object('pmid',pmid,'value',value,'votedAt',voted_at,'destinationId',destination_id,'source',source)) FROM (SELECT * FROM votes WHERE user_id=? ORDER BY pmid)",
+      votesSnapshotSql,
       "SELECT json_group_array(json_object('id',id,'slug',slug,'email',email,'timezone',timezone,'status',status,'createdAt',created_at,'auth',auth_subject)) FROM users WHERE id=?",
       "SELECT json_group_array(json_object('version',version,'profile',config_json,'active',active,'createdAt',created_at)) FROM profile_versions WHERE user_id=?",
       "SELECT json_group_array(json_object('kind',kind,'value',value,'position',position,'version',profile_version)) FROM (SELECT * FROM profile_sources WHERE user_id=? ORDER BY position)",
@@ -103,7 +115,14 @@ export class ImportRepository {
     const raw = snapshots.map(s => z.string().parse(s.results[0]?.data));
     const [articles, votes, users, profiles, sources, destinations] = raw.map(s => JSON.parse(s) as { [key: string]: unknown }[]);
     const records: Record[] = articles.map(r => ({ kind: 'article', pmid: String(r.pmid), title: r.title === null ? null : String(r.title), firstSeen: String(r.firstSeen), relevance: r.relevance as number | null, delivered: r.delivered === 1 }));
-    records.push(...votes.map(r => ({ kind: 'vote' as const, pmid: String(r.pmid), value: r.value as 0 | 1, votedAt: String(r.votedAt), chatId: u.chatId })));
+    // Later reconciliations legitimately change votes. Undo their sealed steps, checking each
+    // one against the current state, so the import itself is still verified exactly.
+    const steps = await reconciliationSteps(this.db, u.id);
+    let imported: VoteMap = new Map();
+    try {
+      imported = replayReverse(new Map(votes.map(r => [String(r.pmid), VoteState.parse({ value: r.value, votedAt: r.votedAt })])), steps);
+    } catch { throw conflict(); }
+    records.push(...[...imported].map(([pmid, v]) => ({ kind: 'vote' as const, pmid, value: v.value, votedAt: v.votedAt, chatId: u.chatId })));
     if (canonical(counts(records)) !== canonical(m.counts)
       || canonical(users) !== canonical([{ id: u.id, slug: u.slug, email: u.email, timezone: u.timezone, status: 'paused', createdAt: m.capturedAt, auth: null }])
       || canonical(profiles) !== canonical([{ version: 1, profile: JSON.stringify(m.profile), active: 1, createdAt: m.capturedAt }])
@@ -124,6 +143,8 @@ export class ImportRepository {
     }
     if (total !== records.length) throw conflict();
     const status = await this.status(id);
+    // Reconciliation requires a sealed import; steps on an open session are never legitimate.
+    if (steps.length && status.status !== 'finalized') throw conflict();
     const safety = await this.db.prepare(`SELECT
       (SELECT mode FROM system_controls WHERE singleton=1) AS mode,
       (SELECT count(*) FROM digest_runs WHERE user_id=?) AS runs,

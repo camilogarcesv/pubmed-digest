@@ -3,9 +3,9 @@ import { z } from 'zod';
 export const businessTables = [
   'users', 'profile_versions', 'profile_sources', 'destinations', 'articles',
   'digest_runs', 'digest_chunks', 'digest_items', 'user_articles',
-  'delivery_messages', 'delivery_resolutions', 'votes', 'data_imports',
+  'delivery_messages', 'delivery_resolutions', 'votes', 'data_imports', 'vote_reconciliations',
 ] as const;
-export const migrations = ['0001_multiuser.sql', '0002_draft_guards.sql', '0003_source_order.sql', '0004_operation_lock.sql', '0005_import_sessions.sql'];
+export const migrations = ['0001_multiuser.sql', '0002_draft_guards.sql', '0003_source_order.sql', '0004_operation_lock.sql', '0005_import_sessions.sql', '0006_vote_reconciliations.sql'];
 export const operationTables = ['operation_lock', 'operation_assertions', 'import_sessions', 'import_blocks'];
 const hexId = z.string().regex(/^[a-f0-9]{32}$/).refine(s => !/^0+$/.test(s));
 const uuid = z.uuid().refine(s => s !== '00000000-0000-0000-0000-000000000000');

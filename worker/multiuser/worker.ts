@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { DomainError, SeenCheck, SystemMode, UserId } from '../../src/multiuser/contracts.js';
 import { ImportRepository } from './imports.js';
 import { ImportLease, ImportManifest } from '../../src/multiuser/import-contracts.js';
+import { VoteReconciliationRepository } from './reconciliations.js';
 import { D1DigestRepository } from './repository.js';
 
 // Binding shape comes from generated configuration; this handler works in either entrypoint.
@@ -72,6 +73,22 @@ export default {
         if (path === '/internal/v1/imports' && request.method === 'POST') {
           const { owner, manifest } = z.strictObject({ owner: z.uuid(), manifest: ImportManifest }).parse(await readJson(request));
           return json(await imports.create(owner, manifest));
+        }
+        // Legacy vote reconciliation: KV capture -> D1 copy, same credential and lease as the import.
+        const reconcile = /^\/internal\/v1\/imports\/users\/([^/]+)\/vote-reconciliations(?:\/(plan|verify))?$/.exec(path);
+        if (reconcile) {
+          const userId = UserId.parse(reconcile[1]);
+          const reconciliations = new VoteReconciliationRepository(env.DB);
+          if (request.method === 'POST' && reconcile[2] === 'plan') {
+            const { capture } = z.strictObject({ capture: z.unknown() }).parse(await readJson(request));
+            return json(await reconciliations.plan(userId, capture));
+          }
+          if (request.method === 'POST' && !reconcile[2]) {
+            const { owner, capture } = z.strictObject({ owner: z.uuid(), capture: z.unknown() }).parse(await readJson(request));
+            return json(await reconciliations.apply(owner, userId, capture));
+          }
+          if (request.method === 'GET' && reconcile[2] === 'verify') return json(await reconciliations.verify(userId));
+          throw new RequestError(404, 'not_found', 'Ruta no encontrada.');
         }
         const match = /^\/internal\/v1\/imports\/([a-f0-9-]+)(?:\/(blocks|verify|finalize))?$/.exec(path);
         if (match) {

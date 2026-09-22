@@ -81,7 +81,7 @@ it('contains D1 failures while legacy votes still persist and export normally', 
   expect(JSON.stringify(log.mock.calls)).not.toContain('private SQL');
   const webhook = new Request('https://worker.test/webhook', { method: 'POST',
     headers: { 'x-telegram-bot-api-secret-token': 'test-webhook' },
-    body: JSON.stringify({ callback_query: { id: 'test', data: 'v:123:1', message: { message_id: 7, chat: { id: 99 } } } }) });
+    body: JSON.stringify({ update_id: 1, callback_query: { id: 'test', data: 'v:123:1', message: { message_id: 7, chat: { id: 99 } } } }) });
   expect((await invoke(webhook, { ...outage, DIGEST_SERVICE_SECRET: undefined })).status).toBe(200);
   expect(telegram).toHaveBeenCalledTimes(2);
   const exported = await invoke(request('/votes', 'test-export'), outage);

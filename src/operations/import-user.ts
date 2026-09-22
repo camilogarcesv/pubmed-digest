@@ -10,7 +10,7 @@ import { buildPackage, packageFiles, StrictVotes, verifyPackage, type Capture } 
 const exec = promisify(execFile);
 const json = (value: unknown) => JSON.stringify(value, null, 2) + '\n';
 const Sha = z.string().regex(/^[a-f0-9]{40}$/);
-async function privatePath(path: string, exists = true) {
+export async function privatePath(path: string, exists = true) {
   const root = await realpath('.local');
   const target = exists ? await realpath(path) : resolve(await realpath(resolve(path, '..')), path.split('/').at(-1)!);
   const rel = relative(root, target);
@@ -20,7 +20,7 @@ async function privatePath(path: string, exists = true) {
 async function gitFile(sha: string, path: string) {
   return (await exec('git', ['show', `${Sha.parse(sha)}:${path}`], { maxBuffer: 16 * 1024 * 1024 })).stdout;
 }
-function origin(input: string) {
+export function origin(input: string) {
   const url = new URL(input);
   if (url.username || url.password || url.search || url.hash || url.pathname !== '/' || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))) throw new Error('Invalid Worker origin');
   return url.origin;
@@ -35,6 +35,12 @@ export function importClient(base: string, secret: string, fetcher: typeof fetch
     if (!response.ok || response.headers.get('cache-control') !== 'no-store') throw new Error(`Import request failed (${response.status})`);
     return response.json();
   };
+}
+/** Strict KV export: fails closed on any invalid or vanished record instead of dropping it. */
+export async function fetchStrictVotes(base: string, secret: string, fetcher: typeof fetch = fetch) {
+  const response = await fetcher(`${origin(base)}/votes?strict=1`, { headers: { authorization: `Bearer ${secret}` }, redirect: 'error', signal: AbortSignal.timeout(30_000) });
+  if (!response.ok || response.headers.get('cache-control') !== 'no-store') throw new Error('Strict vote capture failed');
+  return StrictVotes.parse(await response.json());
 }
 const Status = z.object({ status: z.enum(['open', 'finalized']), manifest_hash: z.string(), blocks: z.array(z.object({ blockIndex: z.number(), checksum: z.string() })) });
 export async function applyPackage(manifest: Manifest, blocks: Block[], request: ReturnType<typeof importClient>) {
@@ -83,10 +89,7 @@ async function main() {
     capture.ledger = await gitFile(stateSha, 'state.json');
     capture.profile = await gitFile(codeSha, 'profile.yaml');
     capture.config = await gitFile(codeSha, 'src/config.ts');
-    const secret = z.string().min(16).parse(process.env.VOTES_READ_SECRET);
-    const response = await fetch(`${origin(values.origin)}/votes?strict=1`, { headers: { authorization: `Bearer ${secret}` }, redirect: 'error', signal: AbortSignal.timeout(30_000) });
-    if (!response.ok || response.headers.get('cache-control') !== 'no-store') throw new Error('Strict vote capture failed');
-    capture.votes = json(StrictVotes.parse(await response.json()));
+    capture.votes = json(await fetchStrictVotes(values.origin, z.string().min(16).parse(process.env.VOTES_READ_SECRET)));
     // Read-only export. Provider output is captured, never printed; backup stays private.
     const backupPath = resolve(dir, packageFiles.backup);
     await exec('pnpm', ['exec', 'wrangler', 'd1', 'export', 'DB', '--remote', '--config', configPath, '--output', backupPath],
@@ -112,9 +115,7 @@ async function main() {
   const evidence = { at: new Date().toISOString(), command, manifestHash: await checksum(manifest), result };
   await writeFile(resolve(dir, `${command}-${Date.now()}.json`), json(evidence), { mode: 0o600 });
   if (command === 'verify' && process.env.VOTES_READ_SECRET) {
-    const response = await fetch(`${origin(values.origin)}/votes?strict=1`, { headers: { authorization: `Bearer ${process.env.VOTES_READ_SECRET}` }, redirect: 'error', signal: AbortSignal.timeout(30_000) });
-    if (!response.ok) throw new Error('Post-capture comparison failed');
-    const later = StrictVotes.parse(await response.json());
+    const later = await fetchStrictVotes(values.origin, process.env.VOTES_READ_SECRET);
     await writeFile(resolve(dir, `later-votes-${Date.now()}.json`), json({ captured: JSON.parse(capture.votes), later, changed: canonical(later) !== canonical(JSON.parse(capture.votes)), synchronized: false }), { mode: 0o600 });
   }
   console.log(json({ completed: command, manifestHash: await checksum(manifest) }));
