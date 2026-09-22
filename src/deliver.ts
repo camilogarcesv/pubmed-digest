@@ -19,7 +19,7 @@ export interface Deliverer {
 
 const TELEGRAM_LIMIT = 4096;
 /** Pause between consecutive messages to one chat. Telegram sustains ~1 msg/s per chat. */
-const INTER_MESSAGE_MS = 350;
+export const INTER_MESSAGE_MS = 350;
 
 /** Prints to stdout. Used for --dry-run and when no delivery target is configured. */
 export class ConsoleDeliverer implements Deliverer {

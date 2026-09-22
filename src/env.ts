@@ -34,6 +34,9 @@ const EnvSchema = z.object({
   // Cloudflare Worker vote feedback (see worker/). Unset => the feature is silently off.
   VOTES_URL: optionalNonEmpty(),
   VOTES_READ_SECRET: optionalNonEmpty(),
+  // Internal digest API of the Worker (--backend d1). The origin defaults to VOTES_URL's.
+  DIGEST_SERVICE_SECRET: optionalNonEmpty(),
+  DIGEST_API_ORIGIN: optionalNonEmpty(),
   EUTILS_EMAIL: z.preprocess(
     emptyToUndefined,
     z.string().email("EUTILS_EMAIL must be a valid email").optional(),

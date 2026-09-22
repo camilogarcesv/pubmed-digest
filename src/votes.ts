@@ -145,8 +145,17 @@ export interface DynamicExemplars {
  * recent vote. Titles come from the ledger — votes only carry PMIDs.
  */
 export function dynamicExemplars(votes: Vote[], store: SeenStore, max: number): DynamicExemplars {
+  return exemplarsFromVotes(votes, (pmid) => store.get(pmid)?.title, max);
+}
+
+/** The same selection with titles from any source (the D1 eval context carries them per vote). */
+export function exemplarsFromVotes(
+  votes: Pick<Vote, "pmid" | "value" | "votedAt">[],
+  titleOf: (pmid: string) => string | undefined,
+  max: number,
+): DynamicExemplars {
   const newestFirst = [...votes].sort((a, b) => b.votedAt.localeCompare(a.votedAt));
-  const decided = new Map<string, Vote>();
+  const decided = new Map<string, Pick<Vote, "pmid" | "value" | "votedAt">>();
   for (const v of newestFirst) {
     if (!decided.has(v.pmid)) decided.set(v.pmid, v);
   }
@@ -154,7 +163,7 @@ export function dynamicExemplars(votes: Vote[], store: SeenStore, max: number): 
   const liked: string[] = [];
   const disliked: string[] = [];
   for (const v of decided.values()) {
-    const title = store.get(v.pmid)?.title;
+    const title = titleOf(v.pmid);
     if (!title) {
       logger.debug("vote for a pmid the ledger no longer has", { pmid: v.pmid });
       continue;

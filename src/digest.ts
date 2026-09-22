@@ -50,6 +50,14 @@ export function selectForDigest(papers: ScoredPaper[], opts: SelectOptions): Sel
   return { kept, nearMisses };
 }
 
+/** One rendered digest message and what it refers to, so a backend can persist and vote-check it. */
+export interface DigestPart {
+  kind: "header" | "paper" | "near_miss" | "footer" | "empty";
+  /** The paper a paper/near-miss message renders; null for header, section label, footer, empty. */
+  pmid: string | null;
+  message: OutMessage;
+}
+
 /**
  * Render the digest as a sequence of Telegram-HTML messages: a header, one message per paper
  * (each carrying its own 👍/👎 keyboard — Telegram anchors an inline keyboard to a single
@@ -63,25 +71,34 @@ export function renderDigestMessages(
   opts: RenderOptions,
   nearMisses: ScoredPaper[] = [],
 ): OutMessage[] {
+  return renderDigestParts(papers, opts, nearMisses).map((p) => p.message);
+}
+
+/** The same rendering as renderDigestMessages, with each message's role and paper attached. */
+export function renderDigestParts(
+  papers: ScoredPaper[],
+  opts: RenderOptions,
+  nearMisses: ScoredPaper[] = [],
+): DigestPart[] {
   const header = `<b>${escapeHtml(opts.title)}</b>`;
 
   if (papers.length === 0 && nearMisses.length === 0) {
     const parts = [header, "No hay artículos que superen el umbral esta vez."];
     if (opts.footer) parts.push(`<i>${escapeHtml(opts.footer)}</i>`);
-    return [{ text: parts.join("\n\n") }];
+    return [{ kind: "empty", pmid: null, message: { text: parts.join("\n\n") } }];
   }
 
-  const messages: OutMessage[] = [{ text: header }];
-  for (const p of [...papers].sort(byRelevance)) messages.push(paperMessage(p, opts));
+  const out: DigestPart[] = [{ kind: "header", pmid: null, message: { text: header } }];
+  for (const p of [...papers].sort(byRelevance)) out.push({ kind: "paper", pmid: p.pmid, message: paperMessage(p, opts) });
 
   if (nearMisses.length > 0) {
-    messages.push({ text: "<i>Cerca del umbral (semana floja):</i>" });
+    out.push({ kind: "header", pmid: null, message: { text: "<i>Cerca del umbral (semana floja):</i>" } });
     // Near-miss votes are extra-valuable signal: they say exactly where the bar sits wrong.
-    for (const p of [...nearMisses].sort(byRelevance)) messages.push(paperMessage(p, opts));
+    for (const p of [...nearMisses].sort(byRelevance)) out.push({ kind: "near_miss", pmid: p.pmid, message: paperMessage(p, opts) });
   }
 
-  if (opts.footer) messages.push({ text: `<i>${escapeHtml(opts.footer)}</i>` });
-  return messages;
+  if (opts.footer) out.push({ kind: "footer", pmid: null, message: { text: `<i>${escapeHtml(opts.footer)}</i>` } });
+  return out;
 }
 
 function paperMessage(p: ScoredPaper, opts: RenderOptions): OutMessage {
