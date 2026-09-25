@@ -71,21 +71,24 @@ export async function searchSources(deps: Pick<PipelineDeps, "cfg" | "pubmed">, 
 
 /**
  * Turn search results into one profile's new PMIDs, in source order (the first source that lists a
- * PMID labels it), counting the profile's metrics. `describe` names a source in logs.
+ * PMID labels it), counting the profile's metrics. With `privateSources` logs name a source by its
+ * position and omit upstream error text, since it can repeat private journals or queries.
  */
 export function collectFromResults(
   metrics: RunMetrics,
   sources: Source[],
   results: SourceResults,
   isSeen: (pmid: string) => boolean,
-  describe: (s: Source, index: number) => string = (s) => s.label,
+  options: { privateSources?: boolean } = {},
 ): Map<string, string> {
   const pmidToSource = new Map<string, string>();
+  const describe = (s: Source, index: number) => options.privateSources ? `source ${index + 1}` : s.label;
   sources.forEach((s, index) => {
     const r = results.get(s.term);
     if (!r || r instanceof Error) {
       metrics.sourcesFailed++;
-      logger.error("esearch failed, skipping source", { source: describe(s, index), error: String(r) });
+      const error = options.privateSources ? "source_search_failed" : String(r);
+      logger.error("esearch failed, skipping source", { source: describe(s, index), error });
       return;
     }
     const { ids, count } = r;

@@ -20,7 +20,7 @@ Edit `profile.yaml` to define the topics and sources to follow. Keep credentials
 
 ## Multi-user backend
 
-`pnpm dev:digest -- --backend d1 --dry-run --user <slug>` previews one user's digest from the Worker's internal API: profile, history and votes come from D1 instead of `profile.yaml` and the local ledger. It needs `DIGEST_SERVICE_SECRET`. Without `--dry-run`, the D1 path creates runs and delivers through the Worker, which accepts writes only when D1 is the operating mode. `pnpm eval -- --user <slug>` evaluates that user's votes from D1. The default remains the file-based digest.
+`pnpm dev:digest -- --backend d1 --dry-run --user <slug>` previews one user's digest from the Worker's internal API: profile, history and votes come from D1 instead of `profile.yaml` and the local ledger. It needs `DIGEST_SERVICE_SECRET`. Without `--dry-run`, the D1 path creates runs and delivers through the Worker, which accepts writes only when D1 is the operating mode. `--counts-only` keeps a D1 preview to counts, without printing the digest or article ids; in GitHub Actions, whose logs are public, D1 runs always behave this way. `pnpm eval -- --user <slug>` evaluates that user's votes from D1, and `pnpm d1:lag -- --user <slug> --state state.json` counts what D1 is still missing from the ledger and the votes. For vote comparisons, set `LEGACY_VOTE_OWNER` to a private JSON object with the verified legacy owner's `slug` and `chatId`; other chats are counted separately. The default remains the file-based digest.
 
 ## Feedback
 

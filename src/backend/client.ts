@@ -123,7 +123,8 @@ export function httpBackend(
 
 /** The Worker's internal API: DIGEST_API_ORIGIN, or the vote export's origin by default. */
 export function backendFromEnv(env: { DIGEST_API_ORIGIN?: string; VOTES_URL?: string; DIGEST_SERVICE_SECRET?: string }): DigestBackend {
-  const origin = env.DIGEST_API_ORIGIN ?? env.VOTES_URL;
+  // An empty value (an unset GitHub secret arrives as "") falls back like an absent one.
+  const origin = env.DIGEST_API_ORIGIN || env.VOTES_URL;
   if (!origin || !env.DIGEST_SERVICE_SECRET) {
     throw new Error("The D1 backend requires DIGEST_SERVICE_SECRET and the Worker origin (DIGEST_API_ORIGIN or VOTES_URL).");
   }

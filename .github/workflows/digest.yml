@@ -97,16 +97,15 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
-            echo "Telegram secrets not configured; skipping failure notification."
-            exit 0
+          if [[ -f .github/scripts/notify-failure.sh ]]; then
+            .github/scripts/notify-failure.sh /tmp/digest.log \
+            "⚠️ El digest semanal de PubMed FALLÓ." \
+            "(sin log: el fallo ocurrió antes de ejecutar el digest)"
+          elif [[ -n "$TELEGRAM_BOT_TOKEN" && -n "$TELEGRAM_CHAT_ID" ]]; then
+            # Checkout itself can fail, leaving no script or log to read.
+            curl -sS -f -o /dev/null --connect-timeout 10 --max-time 30 \
+              --data-urlencode chat_id="$TELEGRAM_CHAT_ID" \
+              --data-urlencode text="Falló el workflow antes de preparar el aviso. $RUN_URL" \
+              "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" 2>/dev/null \
+              || echo "Could not send the failure notification."
           fi
-          DETAIL="(sin log: el fallo ocurrió antes de ejecutar el digest)"
-          if [[ -s /tmp/digest.log ]]; then
-            DETAIL=$(tail -c 600 /tmp/digest.log)
-          fi
-          TEXT=$(printf '⚠️ El digest semanal de PubMed FALLÓ.\n\n%s\n\n%s' "$DETAIL" "$RUN_URL")
-          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            --data-urlencode chat_id="${TELEGRAM_CHAT_ID}" \
-            --data-urlencode text="$TEXT" \
-            || echo "Could not send the failure notification."

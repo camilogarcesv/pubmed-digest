@@ -27,6 +27,7 @@
     "ledger:extend": "tsx src/operations/extend-ledger.ts",
     "votes:reconcile": "tsx src/operations/reconcile-votes.ts",
     "digest:reconcile": "tsx src/operations/reconcile-digest.ts",
+    "d1:lag": "tsx src/operations/d1-lag.ts",
     "state:repair": "tsx src/repair-state.ts",
     "eval": "tsx src/eval.ts"
   },
