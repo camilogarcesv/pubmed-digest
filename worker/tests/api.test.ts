@@ -25,7 +25,7 @@ it('reads local contexts/mode/seen with private cache policy and zero ledger cha
   const contexts = await contextResponse.text();
   expect(contexts).not.toContain('email');
   expect(contexts).not.toContain('externalId');
-  expect(await (await backend.fetch(request('mode'), env)).json()).toEqual({ mode: 'legacy' });
+  expect(await (await backend.fetch(request('mode'), env)).json()).toEqual({ mode: 'legacy', version: null });
   expect(await (await backend.fetch(request('seen/check', { pairs: [{ userId: alice, pmid: '123' }, { userId: bob, pmid: '123' }] }), env)).json()).toEqual({ seen: [true, false] });
   expect(await (await backend.fetch(request(`users/${bob}/eval-context`), env)).json()).toEqual({ votes: [] });
   expect((await env.DB.prepare('SELECT * FROM digest_runs').all()).results).toEqual([]);

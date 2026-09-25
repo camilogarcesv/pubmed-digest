@@ -56,10 +56,12 @@ export function assertBindings(input: unknown, kvId: string, databaseId: string,
   for (const b of bindings) {
     if (b.name === 'DB' && b.type === 'd1' && b.id === databaseId) continue;
     if (b.name === 'VOTES' && b.type === 'kv_namespace') continue;
+    if (b.name === 'CF_VERSION_METADATA' && b.type === 'version_metadata') continue;
     if (['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'VOTES_READ_SECRET', 'DIGEST_SERVICE_SECRET', 'IMPORT_SERVICE_SECRET'].includes(b.name) && b.type === 'secret_text') continue;
     throw new Error('Unexpected binding');
   }
-  if (requireD1 && (!names.has('DB') || !names.has('DIGEST_SERVICE_SECRET'))) throw new Error('Internal API binding missing');
+  // The release waits on the version each response reports, so a published Worker must carry it.
+  if (requireD1 && (!names.has('DB') || !names.has('DIGEST_SERVICE_SECRET') || !names.has('CF_VERSION_METADATA'))) throw new Error('Internal API binding missing');
 }
 
 export function assertEmptySchema(tables: string[], counts: number[], mode: unknown, applied: string[], complete: boolean): void {

@@ -44,6 +44,7 @@ function env(kv: KVNamespace, overrides: Partial<WorkerEnv> = {}): WorkerEnv {
     TELEGRAM_BOT_TOKEN: "bot-token",
     TELEGRAM_WEBHOOK_SECRET: "webhook-secret",
     VOTES_READ_SECRET: "read-secret",
+    CF_VERSION_METADATA: { id: "test-version", tag: "", timestamp: "" },
     ...overrides,
   };
 }

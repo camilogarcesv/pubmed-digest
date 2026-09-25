@@ -42,8 +42,13 @@ describe('release safety gates', () => {
     expect(() => check([...legacyBindings, { name: 'OTHER', type: 'plain_text' }])).toThrow();
     expect(() => check([...legacyBindings, { name: 'DB', type: 'd1', id: 'wrong' }])).toThrow();
     expect(() => check([...legacyBindings, legacyBindings[0]])).toThrow();
-    expect(() => check([...legacyBindings, { name: 'DB', type: 'd1', id: releaseEnv.D1_DATABASE_ID },
-      { name: 'DIGEST_SERVICE_SECRET', type: 'secret_text' }], true)).not.toThrow();
+    const internal = [...legacyBindings, { name: 'DB', type: 'd1', id: releaseEnv.D1_DATABASE_ID }, { name: 'DIGEST_SERVICE_SECRET', type: 'secret_text' }];
+    const versioned = [...internal, { name: 'CF_VERSION_METADATA', type: 'version_metadata' }];
+    expect(() => check(versioned, true)).not.toThrow();
+    expect(() => check(versioned)).not.toThrow();
+    // The release waits on the reported version, so a published Worker without it fails the check.
+    expect(() => check(internal, true)).toThrow();
+    expect(() => check([...internal, { name: 'CF_VERSION_METADATA', type: 'plain_text' }], true)).toThrow();
   });
   it('allows only an empty or tracked partial schema before migration, complete empty legacy after', () => {
     expect(() => assertEmptySchema([], [], undefined, [], false)).not.toThrow();

@@ -15,6 +15,7 @@ const exec = promisify(execFile);
 type Runtime = {
   command?: (args: string[]) => Promise<string>;
   fetch?: typeof fetch;
+  wait?: (ms: number) => Promise<void>;
 };
 
 export async function deployWorker(input = process.env, runtime: Runtime = {}): Promise<void> {
@@ -108,7 +109,19 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     if (response.status !== 200) throw new Error('Legacy export failed');
     z.object({ votes: z.array(z.object({ pmid: z.string(), value: z.union([z.literal(0), z.literal(1)]), chatId: z.string(), votedAt: z.string() })) }).parse(await response.json());
   };
-  const smoke = async () => {
+  // Activation is not delivery: the edge keeps serving the previous version for a few seconds,
+  // and a rotated secret gets 401 there. Wait until the published version answers consistently.
+  const propagated = async (version: string) => {
+    let streak = 0;
+    for (let attempt = 0; attempt < 60 && streak < 3; attempt++) {
+      const response = await get('/internal/v1/mode', config.DIGEST_SERVICE_SECRET);
+      const body: unknown = response.status === 200 ? await response.json().catch(() => null) : null;
+      streak = z.object({ version: z.literal(version) }).safeParse(body).success ? streak + 1 : 0;
+      if (streak < 3) await (runtime.wait ?? (ms => new Promise(done => setTimeout(done, ms))))(2_000);
+    }
+    if (streak < 3) throw new Error('Published version is not serving');
+  };
+  const smoke = async (version: string) => {
     for (const path of ['/internal/v1/mode', '/internal/v1/contexts']) {
       for (const secret of [undefined, config.VOTES_READ_SECRET]) {
         if ((await get(path, secret)).status !== 401) throw new Error('Internal auth smoke failed');
@@ -116,7 +129,7 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
       const response = await get(path, config.DIGEST_SERVICE_SECRET);
       if (response.status !== 200 || response.headers.get('cache-control') !== 'no-store') throw new Error('Internal API smoke failed');
       const body: unknown = await response.json();
-      if (path.endsWith('/mode')) z.object({ mode: z.literal('legacy') }).strict().parse(body);
+      if (path.endsWith('/mode')) z.object({ mode: z.literal('legacy'), version: z.literal(version) }).strict().parse(body);
       else z.object({ users: z.array(z.unknown()).length(0) }).strict().parse(body);
     }
     for (const secret of [undefined, config.DIGEST_SERVICE_SECRET, config.VOTES_READ_SECRET]) {
@@ -235,8 +248,10 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     if (published === previous) throw new Error('New version was not activated');
     progress.stage = 'bindings_check';
     await settings(true);
+    progress.stage = 'propagation';
+    await propagated(published);
     progress.stage = 'smoke';
-    await smoke();
+    await smoke(published);
     progress.stage = 'schema_final_check';
     await lease();
     await checkDatabase(true);

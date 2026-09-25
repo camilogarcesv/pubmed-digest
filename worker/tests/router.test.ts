@@ -9,7 +9,7 @@ const worker = createWorker(telegram);
 function bindings(overrides: Partial<WorkerEnv> = {}): WorkerEnv {
   return { DB: env.DB, VOTES: env.VOTES, TELEGRAM_BOT_TOKEN: 'test-bot',
     TELEGRAM_WEBHOOK_SECRET: 'test-webhook', VOTES_READ_SECRET: 'test-export',
-    DIGEST_SERVICE_SECRET: 'test-service', ...overrides };
+    DIGEST_SERVICE_SECRET: 'test-service', CF_VERSION_METADATA: { id: 'test-version', tag: '', timestamp: '' }, ...overrides };
 }
 function request(path: string, secret?: string, method = 'GET', body?: string): Request {
   return new Request(`https://worker.test${path}`, { method,
@@ -27,7 +27,7 @@ afterEach(() => vi.restoreAllMocks());
 
 it('serves all four read routes without creating business records or sending messages', async () => {
   const cases: Array<[Request, unknown]> = [
-    [request('/internal/v1/mode', 'test-service'), { mode: 'legacy' }],
+    [request('/internal/v1/mode', 'test-service'), { mode: 'legacy', version: 'test-version' }],
     [request('/internal/v1/contexts', 'test-service'), { users: [] }],
     [request('/internal/v1/seen/check', 'test-service', 'POST', JSON.stringify({ pairs: [{ userId: alice, pmid: '123' }] })), { seen: [false] }],
     [request(`/internal/v1/users/${alice}/eval-context`, 'test-service'), { votes: [] }],
