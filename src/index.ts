@@ -17,7 +17,7 @@ import {
   runSearchPipeline,
   type PipelineDeps,
 } from "./pipeline.js";
-import { logger } from "./logger.js";
+import { logger, redactFields } from "./logger.js";
 import { stripArgSeparator } from "./util.js";
 import type { Paper, ScoredPaper } from "./types.js";
 import { backendFromEnv } from "./backend/client.js";
@@ -35,6 +35,7 @@ interface CommonFlags {
   to?: string;
   backend: "legacy" | "d1";
   user?: string;
+  countsOnly: boolean;
 }
 
 async function main(): Promise<void> {
@@ -51,6 +52,7 @@ async function main(): Promise<void> {
       to: { type: "string" },
       backend: { type: "string", default: "legacy" },
       user: { type: "string" },
+      "counts-only": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -79,6 +81,7 @@ async function main(): Promise<void> {
     to: values.to,
     backend: parseBackend(values.backend),
     user: values.user,
+    countsOnly: Boolean(values["counts-only"]),
   };
 
   if (flags.fromCache && flags.rescore) {
@@ -86,6 +89,9 @@ async function main(): Promise<void> {
   }
   if (flags.user !== undefined && flags.backend !== "d1") {
     throw new Error("--user selects a D1 user and requires --backend d1.");
+  }
+  if (flags.countsOnly && (flags.backend !== "d1" || !flags.dryRun)) {
+    throw new Error("--counts-only applies to a D1 preview: use it with --backend d1 --dry-run.");
   }
 
   if (command === "digest") {
@@ -192,13 +198,17 @@ async function runD1Digest(flags: CommonFlags): Promise<void> {
   if (flags.fromCache || flags.rescore || flags.saveCache || flags.to !== undefined) {
     throw new Error("--backend d1 reads users, history and destinations from D1: --from-cache, --rescore, --save-cache and --to do not apply.");
   }
+  // GitHub Actions logs of this repository are public. There, as with --counts-only, a D1 run shows
+  // counts only: no rendered digest and no article ids from the user's private sources.
+  const publicLog = flags.countsOnly || process.env.GITHUB_ACTIONS === "true";
+  if (publicLog) redactFields("pmid", "pmids", "error", "reason");
   const env = loadEnv();
   const summary = await runMultiuserDigest({
     cfg: config,
     pubmed: new PubMedClient({ email: env.EUTILS_EMAIL, apiKey: env.NCBI_API_KEY }),
     backend: backendFromEnv(env),
     scorerFor: () => makeAnthropicScorer(env.ANTHROPIC_API_KEY, config.model, config.batchSize),
-    print: (text) => process.stdout.write(text),
+    print: publicLog ? undefined : (text) => process.stdout.write(text),
   }, { title: digestTitle(), dryRun: flags.dryRun, limit: flags.limit, user: flags.user });
   // Run ids and states only: slugs and user ids stay out of public job logs.
   for (const o of summary.outcomes) {
@@ -333,6 +343,7 @@ function printHelp(): void {
       "  --cache <ruta>     Ruta del caché (por defecto .cache/<comando>.json).",
       "  --backend d1       Digest multiusuario vía el Worker (D1). Por defecto: legacy.",
       "  --user <slug>      Con --backend d1: solo ese usuario (--dry-run lee usuarios pausados).",
+      "  --counts-only      Con --backend d1 --dry-run: solo conteos, sin imprimir el digest.",
       "  -h, --help         Muestra esta ayuda.",
       "",
       "La cobertura (revistas y búsquedas permanentes) se edita en profile.yaml.",

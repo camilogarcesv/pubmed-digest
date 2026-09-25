@@ -50,16 +50,82 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [[ -z "$TELEGRAM_BOT_TOKEN" || -z "$TELEGRAM_CHAT_ID" ]]; then
-            echo "Telegram secrets not configured; skipping failure notification."
-            exit 0
+          if [[ -f .github/scripts/notify-failure.sh ]]; then
+            .github/scripts/notify-failure.sh /tmp/canary.log \
+            "🐤 El canario del sábado FALLÓ — el digest del lunes se romperá." \
+            "(sin log: el fallo ocurrió antes de ejecutar el digest)"
+          elif [[ -n "$TELEGRAM_BOT_TOKEN" && -n "$TELEGRAM_CHAT_ID" ]]; then
+            # Checkout itself can fail, leaving no script or log to read.
+            curl -sS -f -o /dev/null --connect-timeout 10 --max-time 30 \
+              --data-urlencode chat_id="$TELEGRAM_CHAT_ID" \
+              --data-urlencode text="Falló el workflow antes de preparar el aviso. $RUN_URL" \
+              "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" 2>/dev/null \
+              || echo "Could not send the failure notification."
           fi
-          DETAIL="(sin log: el fallo ocurrió antes de ejecutar el digest)"
-          if [[ -s /tmp/canary.log ]]; then
-            DETAIL=$(tail -c 600 /tmp/canary.log)
+
+  # The same smoke run through the Worker's D1 backend, read-only and counts only, for the user
+  # named by the digest environment, plus a count of what D1 still lacks from the ledger and the
+  # votes. It runs after the legacy canary so both never search PubMed at the same time.
+  canary-d1:
+    needs: canary
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    environment: digest
+    env:
+      VOTES_URL: ${{ secrets.VOTES_URL }}
+      DIGEST_SERVICE_SECRET: ${{ secrets.DIGEST_SERVICE_SECRET }}
+      DIGEST_CANARY_USER: ${{ secrets.DIGEST_CANARY_USER }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # --counts-only: titles, reasons and article ids are the user's own digest and stay out of logs.
+      - name: Smoke-run the D1 digest (read-only)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          EUTILS_EMAIL: ${{ secrets.EUTILS_EMAIL }}
+        run: |
+          pnpm dev:digest -- --backend d1 --dry-run --counts-only --limit 3 --user "$DIGEST_CANARY_USER" 2>&1 | tee /tmp/canary-d1.log
+          exit "${PIPESTATUS[0]}"
+
+      - name: Report D1 lag behind the ledger and votes
+        if: ${{ !cancelled() }}
+        env:
+          VOTES_READ_SECRET: ${{ secrets.VOTES_READ_SECRET }}
+          LEGACY_VOTE_OWNER: ${{ secrets.LEGACY_VOTE_OWNER }}
+        run: |
+          git fetch --depth=1 origin +refs/heads/state:refs/remotes/origin/state
+          git show refs/remotes/origin/state:state.json > /tmp/state.json
+          pnpm d1:lag -- --user "$DIGEST_CANARY_USER" --state /tmp/state.json 2>&1 | tee -a /tmp/canary-d1.log
+          exit "${PIPESTATUS[0]}"
+
+      - name: Notify failure via Telegram
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ -f .github/scripts/notify-failure.sh ]]; then
+            .github/scripts/notify-failure.sh /tmp/canary-d1.log \
+            "🐤 El canario D1 del sábado FALLÓ." \
+            "(sin log: el fallo ocurrió antes de ejecutar el canario D1)"
+          elif [[ -n "$TELEGRAM_BOT_TOKEN" && -n "$TELEGRAM_CHAT_ID" ]]; then
+            # Checkout itself can fail, leaving no script or log to read.
+            curl -sS -f -o /dev/null --connect-timeout 10 --max-time 30 \
+              --data-urlencode chat_id="$TELEGRAM_CHAT_ID" \
+              --data-urlencode text="Falló el workflow antes de preparar el aviso. $RUN_URL" \
+              "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" 2>/dev/null \
+              || echo "Could not send the failure notification."
           fi
-          TEXT=$(printf '🐤 El canario del sábado FALLÓ — el digest del lunes se romperá.\n\n%s\n\n%s' "$DETAIL" "$RUN_URL")
-          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            --data-urlencode chat_id="${TELEGRAM_CHAT_ID}" \
-            --data-urlencode text="$TEXT" \
-            || echo "Could not send the failure notification."

@@ -235,7 +235,7 @@ async function discover(deps: OrchestratorDeps, fresh: Fresh[], opts: Orchestrat
   for (const f of fresh) {
     if (f.sources.length === 0) { outcome(f.user, "failed", { error: "The profile defines no sources", metrics: f.metrics }); continue; }
     // Journals and queries are the user's private preferences: logs name them by position only.
-    f.pmidToSource = collectFromResults(f.metrics, f.sources, results, () => false, (_, index) => `source ${index + 1}`);
+    f.pmidToSource = collectFromResults(f.metrics, f.sources, results, () => false, { privateSources: true });
     if (f.metrics.sourcesFailed === f.sources.length) { outcome(f.user, "failed", { error: "Every source of this profile failed", metrics: f.metrics }); continue; }
     searched.push(f);
   }
