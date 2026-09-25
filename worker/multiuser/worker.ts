@@ -9,7 +9,7 @@ import { D1DigestRepository } from './repository.js';
 import { RunRepository, type TelegramFetch } from './runs.js';
 
 // Binding shape comes from generated configuration; this handler works in either entrypoint.
-type BackendEnv = Pick<Cloudflare.Env, 'DB'> & { DIGEST_SERVICE_SECRET?: string; IMPORT_SERVICE_SECRET?: string; VOTES_READ_SECRET?: string; TELEGRAM_WEBHOOK_SECRET?: string; TELEGRAM_BOT_TOKEN?: string };
+type BackendEnv = Pick<Cloudflare.Env, 'DB'> & { CF_VERSION_METADATA?: WorkerVersionMetadata; DIGEST_SERVICE_SECRET?: string; IMPORT_SERVICE_SECRET?: string; VOTES_READ_SECRET?: string; TELEGRAM_WEBHOOK_SECRET?: string; TELEGRAM_BOT_TOKEN?: string };
 const MAX_BODY = 256 * 1024;
 class RequestError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) { super(message); }
@@ -151,7 +151,8 @@ export function createBackend(fetchImpl: TelegramFetch = (input, init) => fetch(
       const repository = new D1DigestRepository(env.DB);
       if (request.method === 'GET' && path === '/internal/v1/mode') {
         const row = await env.DB.prepare('SELECT mode FROM system_controls WHERE singleton=1').first<{ mode: string }>();
-        return json({ mode: SystemMode.parse(row?.mode) });
+        // The answering version lets a release wait until its own code serves before smoke-testing it.
+        return json({ mode: SystemMode.parse(row?.mode), version: env.CF_VERSION_METADATA?.id ?? null });
       }
       if (request.method === 'GET' && path === '/internal/v1/contexts') return json({ users: await repository.contexts() });
       if (request.method === 'POST' && path === '/internal/v1/seen/check') return json({ seen: await repository.seen(SeenCheck.parse(await readJson(request))) });

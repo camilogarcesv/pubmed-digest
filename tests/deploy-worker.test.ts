@@ -18,8 +18,11 @@ const input = {
   GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_ACTIONS: 'true',
 };
 
-function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure?: boolean; deployUncertain?: boolean; drift?: boolean; rollbackDrift?: boolean; migrateFailure?: boolean; partial?: boolean; rollbackFailure?: boolean; accessDenied?: boolean; beforeCommand?: (db: DatabaseSync, args: string[]) => void } = {}) {
+function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure?: boolean; deployUncertain?: boolean; drift?: boolean; rollbackDrift?: boolean; migrateFailure?: boolean; partial?: boolean; rollbackFailure?: boolean; accessDenied?: boolean; beforeCommand?: (db: DatabaseSync, args: string[]) => void;
+  // Which authenticated mode reads still reach the previous version, and whether it already holds the digest secret.
+  previousAnswers?: (read: number) => boolean; previousKeepsSecret?: boolean } = {}) {
   let current = options.drift ? next : previous;
+  let modeReads = 0;
   const db = new DatabaseSync(':memory:');
   const migrate = (names: string[], directory = 'worker/migrations') => {
     db.exec('CREATE TABLE IF NOT EXISTS d1_migrations(id INTEGER PRIMARY KEY,name TEXT)');
@@ -74,7 +77,8 @@ function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure
     if (path.endsWith('/settings')) return Response.json({ success: true, result: { bindings: [
       { name: 'VOTES', type: 'kv_namespace', namespace_id: input.VOTES_KV_ID },
       ...['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'VOTES_READ_SECRET'].map(name => ({ name, type: 'secret_text' })),
-      ...(current === next ? [{ name: 'DB', type: 'd1', id: input.D1_DATABASE_ID }, { name: 'DIGEST_SERVICE_SECRET', type: 'secret_text' }] : []),
+      ...(current === next ? [{ name: 'DB', type: 'd1', id: input.D1_DATABASE_ID }, { name: 'DIGEST_SERVICE_SECRET', type: 'secret_text' },
+        { name: 'CF_VERSION_METADATA', type: 'version_metadata' }] : []),
     ] } });
     if (path.includes('/d1/database/')) return Response.json({ success: true, result: { uuid: input.D1_DATABASE_ID, name: 'pubmed-digest' } });
     if (path.endsWith('/subdomain')) return Response.json({ success: true, result: { subdomain: 'test' } });
@@ -83,17 +87,21 @@ function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure
     if (path === '/votes') return auth === `Bearer ${input.VOTES_READ_SECRET}` ? Response.json({ votes: [] }) : new Response('', { status: 403 });
     if (path === '/internal/v1/imports' || path.startsWith('/internal/v1/imports/')) return new Response('', { status: auth === `Bearer ${input.IMPORT_SERVICE_SECRET}` ? 400 : 401 });
     if (path.startsWith('/internal/v1/admin/')) return new Response('', { status: auth === `Bearer ${input.IMPORT_SERVICE_SECRET}` ? 409 : 401 });
-    if (options.smokeFailure) return new Response('', { status: 500 });
+    if (path.endsWith('/mode') && auth === `Bearer ${input.DIGEST_SERVICE_SECRET}` && options.previousAnswers?.(modeReads++)) {
+      // The previous version predates the version field.
+      return options.previousKeepsSecret ? Response.json({ mode: 'legacy' }, { headers: { 'cache-control': 'no-store' } }) : new Response('', { status: 401 });
+    }
+    if (options.smokeFailure && !path.endsWith('/mode')) return new Response('', { status: 500 });
     if (auth !== `Bearer ${input.DIGEST_SERVICE_SECRET}`) return new Response('', { status: 401 });
     if (path.includes('/by-slug/')) return new Response('', { status: 404, headers: { 'cache-control': 'no-store' } });
     if (path.includes('/digest-runs') || path.endsWith('/ops/alerts')) {
       return init?.method === 'GET' ? Response.json({ runs: [] }, { headers: { 'cache-control': 'no-store' } }) : new Response('', { status: 409 });
     }
-    const data = path.endsWith('/mode') ? { mode: 'legacy' } : path.endsWith('/seen/check') ? { seen: [false] }
+    const data = path.endsWith('/mode') ? { mode: 'legacy', version: current } : path.endsWith('/seen/check') ? { seen: [false] }
       : path.endsWith('/eval-context') ? { votes: [] } : { users: [] };
     return Response.json(data, { headers: { 'cache-control': 'no-store' } });
   });
-  return { command, fetch: fetcher, configPath: () => configPath, current: () => current, db };
+  return { command, fetch: fetcher, wait: vi.fn(async (_ms: number) => {}), configPath: () => configPath, current: () => current, db };
 }
 
 it('validates resources, migrates only schema and deploys additively with private config', async () => {
@@ -120,6 +128,30 @@ it.each([{ smokeFailure: true }, { deployUncertain: true }])('restores the previ
   expect(f.current()).toBe(previous);
   expect(f.command.mock.calls.some(([args]) => args[0] === 'rollback' && args[1] === previous)).toBe(true);
   expect(f.command.mock.calls.some(([args]) => args.includes('delete'))).toBe(false);
+});
+it('waits until the published version serves before smoke testing a rotated secret', async () => {
+  const f = fixture({ previousAnswers: read => read < 4 });
+  await deployWorker(input, f);
+  expect(f.current()).toBe(next);
+  // Four stale reads, then three consecutive answers from the published version.
+  expect(f.wait.mock.calls).toEqual(Array(6).fill([2_000]));
+  expect(f.command.mock.calls.some(([args]) => args[0] === 'rollback')).toBe(false);
+});
+it('restarts the wait when the previous version answers again', async () => {
+  const f = fixture({ previousAnswers: read => read === 1 });
+  await deployWorker(input, f);
+  expect(f.wait).toHaveBeenCalledTimes(4);
+});
+it('restores the previous Worker when the published version never serves, even if the previous one answers', async () => {
+  const f = fixture({ previousAnswers: () => true, previousKeepsSecret: true });
+  await expect(deployWorker(input, f)).rejects.toMatchObject({ stage: 'propagation', recovery: 'previous_restored' });
+  expect(f.wait).toHaveBeenCalledTimes(60);
+  expect(f.current()).toBe(previous);
+});
+it('restores the previous Worker when the smoke reaches another version', async () => {
+  const f = fixture({ previousAnswers: read => read === 3, previousKeepsSecret: true });
+  await expect(deployWorker(input, f)).rejects.toMatchObject({ stage: 'smoke', recovery: 'previous_restored' });
+  expect(f.current()).toBe(previous);
 });
 it('restores the previous Worker when reconciliation is reachable without the import credential', async () => {
   const f = fixture();

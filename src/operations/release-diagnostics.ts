@@ -1,7 +1,7 @@
 // Public diagnostics are fixed labels only, never provider messages, SQL, paths or identifiers.
 const stages = ['prepare', 'inventory', 'legacy_check', 'schema_precheck', 'checkpoint',
   'bundle', 'migrate', 'schema_postcheck', 'drift_check', 'secrets_prepare', 'publish',
-  'activation_check', 'bindings_check', 'smoke', 'schema_final_check', 'rollback'] as const;
+  'activation_check', 'bindings_check', 'propagation', 'smoke', 'schema_final_check', 'rollback'] as const;
 const codes = ['step_failed', 'provider_command_failed', 'sql_incomplete_input', 'provider_access_denied'] as const;
 const recoveries = ['not_attempted', 'previous_retained', 'previous_restored', 'manual_reconciliation'] as const;
 export type ReleaseStage = typeof stages[number];
