@@ -126,6 +126,8 @@ export class D1DigestRepository implements DigestRepository {
           run.userId, run.kind, run.period, run.runKey).run();
     } catch (error) {
       if (/digest_runs\.period/.test(String(error))) throw new DomainError('conflict', 'Another run for this period is still open');
+      // A refusal by policy (0009), not a failure: the client must not retry it.
+      if (/run precedes activation period/.test(String(error))) throw new DomainError('conflict', 'Run precedes the activation period');
       throw error;
     }
     const existing = await this.db.prepare(`SELECT ${runColumns} FROM digest_runs WHERE user_id=? AND run_key=?`)

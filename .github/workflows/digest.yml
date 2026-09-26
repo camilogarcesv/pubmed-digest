@@ -7,16 +7,40 @@ on:
     - cron: "0 12 * * 1"
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
-# contents: write is needed to push the state ledger to the (unprotected) 'state' branch.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: pubmed-digest
   cancel-in-progress: false
 
 jobs:
+  backend:
+    runs-on: ubuntu-latest
+    environment: digest
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: mode
+        env:
+          VOTES_URL: ${{ secrets.VOTES_URL }}
+          DIGEST_SERVICE_SECRET: ${{ secrets.DIGEST_SERVICE_SECRET }}
+        run: pnpm d1:health
+
   digest:
+    needs: backend
+    if: needs.backend.outputs.mode == 'legacy'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -109,3 +133,34 @@ jobs:
               "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" 2>/dev/null \
               || echo "Could not send the failure notification."
           fi
+
+  digest-d1:
+    needs: backend
+    if: needs.backend.outputs.mode == 'd1'
+    runs-on: ubuntu-latest
+    environment: digest
+    env:
+      VOTES_URL: ${{ secrets.VOTES_URL }}
+      DIGEST_SERVICE_SECRET: ${{ secrets.DIGEST_SERVICE_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run D1 digest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          EUTILS_EMAIL: ${{ secrets.EUTILS_EMAIL }}
+        run: pnpm dev:digest -- --backend d1
+      - name: Verify D1 after delivery
+        if: ${{ !cancelled() }}
+        run: pnpm d1:health
+      - name: Notify operator through Worker
+        if: failure()
+        run: pnpm d1:health -- --notify digest

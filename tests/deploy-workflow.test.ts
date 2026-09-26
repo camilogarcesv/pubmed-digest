@@ -16,7 +16,7 @@ it('requires manual main deployment, an immutable SHA and serialized non-cancell
   expect(workflow.jobs.deploy.needs).toBe('validate');
   expect(workflow.jobs.deploy.environment).toBe('production');
   expect(workflow.jobs.deploy.permissions).toEqual({ contents: 'read', actions: 'read' });
-  expect(workflow.concurrency).toEqual({ group: 'worker-production', 'cancel-in-progress': false });
+  expect(workflow.concurrency).toEqual({ group: 'pubmed-digest', 'cancel-in-progress': false });
   for (const job of Object.values(workflow.jobs) as Array<{ steps: Array<{ uses?: string; with?: unknown }> }>) {
     expect(job.steps.find(step => step.uses?.startsWith('actions/checkout@'))?.with).toEqual({ ref: '${{ github.sha }}', 'persist-credentials': false });
   }

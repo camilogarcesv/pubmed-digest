@@ -29,7 +29,7 @@ describe("Saturday canary workflow", () => {
   it("runs the D1 canary read-only, counts only, from the digest environment, after the legacy one", () => {
     expect(workflow.permissions).toEqual({ contents: "read" });
     const d1 = workflow.jobs["canary-d1"]!;
-    expect(d1).toMatchObject({ environment: "digest", needs: "canary", if: "${{ !cancelled() }}" });
+    expect(d1).toMatchObject({ environment: "digest", needs: ["backend", "canary"], if: "${{ !cancelled() && needs.backend.result == 'success' }}" });
     expect(d1.permissions).toBeUndefined();
     expect(d1.steps.find(s => s.uses?.startsWith("actions/checkout@"))?.with).toEqual({ "persist-credentials": false });
     const smoke = d1.steps.find(s => s.name === "Smoke-run the D1 digest (read-only)")!;
@@ -39,16 +39,14 @@ describe("Saturday canary workflow", () => {
     expect(digestCalls.length).toBeGreaterThan(0);
     for (const line of digestCalls) expect(line).toContain("--dry-run");
     // Telegram and import credentials never reach the D1 steps; only the failure notice uses Telegram.
-    for (const env of [d1.env ?? {}, ...d1.steps.filter(s => s.if !== "failure()").map(s => s.env ?? {})]) {
+    for (const env of [d1.env ?? {}, ...d1.steps.filter(s => s.name !== "Notify failure via Telegram").map(s => s.env ?? {})]) {
       expect(Object.keys(env).filter(k => k.startsWith("TELEGRAM_") || k === "IMPORT_SERVICE_SECRET")).toEqual([]);
     }
     const lag = d1.steps.find(s => s.name === "Report D1 lag behind the ledger and votes")!;
-    expect(lag).toMatchObject({ if: "${{ !cancelled() }}" });
+    expect(lag).toMatchObject({ if: "${{ !cancelled() && needs.backend.outputs.mode == 'legacy' }}" });
     expect(lag.run).toContain("pnpm d1:lag");
-    for (const job of Object.values(workflow.jobs)) {
-      expect(job.steps.at(-1)).toMatchObject({ name: "Notify failure via Telegram", if: "failure()" });
-      expect(job.steps.at(-1)!.run).toContain(".github/scripts/notify-failure.sh");
-    }
+    expect(d1.steps.find(s => s.name === 'Notify failure via Telegram')?.if).toContain("mode == 'legacy'");
+    expect(d1.steps.at(-1)).toMatchObject({ name: 'Notify D1 operator through Worker', run: 'pnpm d1:health -- --notify canary' });
   });
 });
 
@@ -95,7 +93,7 @@ describe("failure notifier", () => {
 
   it("still notifies privately when checkout failed and the shared script is unavailable", () => {
     const digest = parse(readFileSync(".github/workflows/digest.yml", "utf8"));
-    const steps = [...Object.values(workflow.jobs).map(j => j.steps.at(-1)!), digest.jobs.digest.steps.at(-1)];
+    const steps = [...Object.values(workflow.jobs).flatMap(j => j.steps.filter(s => s.name === 'Notify failure via Telegram')), digest.jobs.digest.steps.at(-1)];
     for (const step of steps) {
       const { result, args } = notify("", false, step.run);
       expect(result.status).toBe(0);

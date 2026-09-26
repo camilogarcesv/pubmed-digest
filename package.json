@@ -28,6 +28,8 @@
     "votes:reconcile": "tsx src/operations/reconcile-votes.ts",
     "digest:reconcile": "tsx src/operations/reconcile-digest.ts",
     "d1:lag": "tsx src/operations/d1-lag.ts",
+    "d1:authority": "tsx src/operations/authority.ts",
+    "d1:health": "tsx src/operations/backend-health.ts",
     "state:repair": "tsx src/repair-state.ts",
     "eval": "tsx src/eval.ts"
   },

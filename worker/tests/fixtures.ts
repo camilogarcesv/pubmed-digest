@@ -45,7 +45,7 @@ export async function advanceRun(runId: string, ...statuses: string[]): Promise<
 /** Empty every table in FK order and return to legacy mode. */
 export async function resetDatabase(): Promise<void> {
   await env.DB.batch([
-    ...['digest_assertions', 'ledger_extension_blocks', 'ledger_extensions', 'vote_reconciliations', 'import_blocks', 'import_sessions', 'operation_assertions',
+    ...['authority_checkpoint', 'authority_events', 'legacy_vote_inflight', 'telegram_vote_updates', 'digest_assertions', 'ledger_extension_blocks', 'ledger_extensions', 'vote_reconciliations', 'import_blocks', 'import_sessions', 'operation_assertions',
       'operation_lock', 'delivery_resolutions', 'votes', 'delivery_messages', 'user_articles', 'digest_items', 'digest_chunks',
       'digest_runs', 'data_imports', 'destinations', 'profile_sources', 'profile_versions', 'users', 'articles']
       .map(table => env.DB.prepare(`DELETE FROM ${table}`)),

@@ -1,0 +1,112 @@
+name: Manage D1 authority
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full reviewed main SHA, also deployed for seal and activate
+        required: true
+        type: string
+      action:
+        description: Audited operation
+        type: choice
+        required: true
+        options: [maintenance, quiesce, release_legacy, seal, activate, resume, cancel]
+      operation_id:
+        description: Stable UUID; reuse unchanged after a lost response
+        type: string
+        required: true
+      expected_mode:
+        description: Current expected mode
+        type: choice
+        required: true
+        options: [legacy, maintenance, d1]
+      reason:
+        description: Public-safe reason for the operation
+        type: string
+        required: true
+      state_sha:
+        description: Final state branch SHA (required for seal and activate)
+        type: string
+      first_period:
+        description: First eligible ISO week (seal only)
+        type: string
+      proof_hash:
+        description: Verified checkpoint hash (activate only)
+        type: string
+      claim_id:
+        description: Orphaned legacy vote claim (release_legacy only)
+        type: string
+      evidence_hash:
+        description: SHA-256 of the private evidence that the claim ended (release_legacy only)
+        type: string
+
+permissions:
+  contents: read
+concurrency:
+  group: pubmed-digest
+  cancel-in-progress: false
+jobs:
+  authority:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify deployment protection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/environments/production" --jq '.' |
+            node --input-type=module -e '
+              let raw = "";
+              for await (const chunk of process.stdin) raw += chunk;
+              const e = JSON.parse(raw);
+              if (!e.protection_rules?.some(r => r.type === "required_reviewers" && r.reviewers?.length > 0) || !e.deployment_branch_policy?.custom_branch_policies) process.exit(1);
+            '
+          gh api "repos/$GITHUB_REPOSITORY/environments/production/deployment-branch-policies" --jq '.' |
+            node --input-type=module -e '
+              let raw = "";
+              for await (const chunk of process.stdin) raw += chunk;
+              const response = JSON.parse(raw);
+              const rules = response.branch_policies;
+              if (response.total_count !== 1 || rules?.length !== 1 || rules[0].name !== "main" || (rules[0].type !== undefined && rules[0].type !== "branch")) process.exit(1);
+            '
+      - name: Check reviewed source and final ledger
+        env:
+          EXPECTED_SHA: ${{ inputs.sha }}
+          OPERATION: ${{ inputs.action }}
+          EXPECTED_STATE: ${{ inputs.state_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          if [[ "$OPERATION" == seal || "$OPERATION" == activate ]]; then
+            ACTUAL_STATE=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/state" --jq .object.sha)
+            test "$EXPECTED_STATE" = "$ACTUAL_STATE"
+          fi
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Execute audited authority operation
+        env:
+          VOTES_URL: ${{ secrets.VOTES_URL }}
+          IMPORT_SERVICE_SECRET: ${{ secrets.IMPORT_SERVICE_SECRET }}
+          DIGEST_IMPORT_ID: ${{ secrets.DIGEST_IMPORT_ID }}
+          AUTHORITY_ACTION: ${{ inputs.action }}
+          AUTHORITY_OPERATION_ID: ${{ inputs.operation_id }}
+          AUTHORITY_EXPECTED_MODE: ${{ inputs.expected_mode }}
+          AUTHORITY_REASON: ${{ inputs.reason }}
+          AUTHORITY_STATE_SHA: ${{ inputs.state_sha }}
+          AUTHORITY_FIRST_PERIOD: ${{ inputs.first_period }}
+          AUTHORITY_PROOF_HASH: ${{ inputs.proof_hash }}
+          AUTHORITY_CLAIM_ID: ${{ inputs.claim_id }}
+          AUTHORITY_EVIDENCE_HASH: ${{ inputs.evidence_hash }}
+        run: pnpm d1:authority
