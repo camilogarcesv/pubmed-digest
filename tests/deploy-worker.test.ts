@@ -18,7 +18,7 @@ const input = {
   GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_ACTIONS: 'true',
 };
 
-function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure?: boolean; deployUncertain?: boolean; drift?: boolean; rollbackDrift?: boolean; migrateFailure?: boolean; partial?: boolean; rollbackFailure?: boolean; accessDenied?: boolean; beforeCommand?: (db: DatabaseSync, args: string[]) => void;
+function fixture(options: { maintenance?: boolean; populated?: boolean; upgrade?: boolean; smokeFailure?: boolean; deployUncertain?: boolean; drift?: boolean; rollbackDrift?: boolean; migrateFailure?: boolean; partial?: boolean; rollbackFailure?: boolean; accessDenied?: boolean; beforeCommand?: (db: DatabaseSync, args: string[]) => void;
   // Which authenticated mode reads still reach the previous version, and whether it already holds the digest secret.
   previousAnswers?: (read: number) => boolean; previousKeepsSecret?: boolean } = {}) {
   let current = options.drift ? next : previous;
@@ -43,6 +43,11 @@ function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure
   if (options.populated || options.upgrade) {
     migrate(options.upgrade ? migrations.slice(0, 4) : migrations);
     db.exec("INSERT INTO users(id,slug,email,timezone,status,created_at) VALUES('test','test','test@example.test','UTC','paused','2026-09-15')");
+  }
+  if (options.maintenance) {
+    migrate(migrations);
+    db.exec("UPDATE system_controls SET mode='maintenance'");
+    db.exec("UPDATE users SET status='active'");
   }
   let configPath = '';
   const command = vi.fn(async (args: string[]) => {
@@ -86,6 +91,11 @@ function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure
     const auth = new Headers(init?.headers).get('authorization');
     if (path === '/votes') return auth === `Bearer ${input.VOTES_READ_SECRET}` ? Response.json({ votes: [] }) : new Response('', { status: 403 });
     if (path === '/internal/v1/imports' || path.startsWith('/internal/v1/imports/')) return new Response('', { status: auth === `Bearer ${input.IMPORT_SERVICE_SECRET}` ? 400 : 401 });
+    if (path === '/internal/v1/admin/authority' && options.maintenance && auth === `Bearer ${input.IMPORT_SERVICE_SECRET}`) {
+      const count = (sql: string) => Number(db.prepare(sql).get()?.n);
+      return Response.json({ mode: 'maintenance', sending: count("SELECT count(*) AS n FROM delivery_messages WHERE status='sending'"),
+        legacyWrites: count('SELECT count(*) AS n FROM legacy_vote_inflight') }, { headers: { 'cache-control': 'no-store' } });
+    }
     if (path.startsWith('/internal/v1/admin/')) return new Response('', { status: auth === `Bearer ${input.IMPORT_SERVICE_SECRET}` ? 409 : 401 });
     if (path.endsWith('/mode') && auth === `Bearer ${input.DIGEST_SERVICE_SECRET}` && options.previousAnswers?.(modeReads++)) {
       // The previous version predates the version field.
@@ -97,12 +107,23 @@ function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure
     if (path.includes('/digest-runs') || path.endsWith('/ops/alerts')) {
       return init?.method === 'GET' ? Response.json({ runs: [] }, { headers: { 'cache-control': 'no-store' } }) : new Response('', { status: 409 });
     }
-    const data = path.endsWith('/mode') ? { mode: 'legacy', version: current } : path.endsWith('/seen/check') ? { seen: [false] }
+    const data = path.endsWith('/mode') ? { mode: options.maintenance ? 'maintenance' : 'legacy', version: current } : path.endsWith('/seen/check') ? { seen: [false] }
       : path.endsWith('/eval-context') ? { votes: [] } : { users: [] };
     return Response.json(data, { headers: { 'cache-control': 'no-store' } });
   });
   return { command, fetch: fetcher, wait: vi.fn(async (_ms: number) => {}), configPath: () => configPath, current: () => current, db };
 }
+
+it('deploys with active users under maintenance and rolls back code while preserving their data', async () => {
+  for (const smokeFailure of [false, true]) {
+    const f = fixture({ populated: true, maintenance: true, smokeFailure });
+    const before = f.db.prepare('SELECT * FROM users').all();
+    if (smokeFailure) await expect(deployWorker({ ...input, WORKER_EXPECTED_MODE: 'maintenance' }, f)).rejects.toMatchObject({ recovery: 'previous_restored' });
+    else await deployWorker({ ...input, WORKER_EXPECTED_MODE: 'maintenance' }, f);
+    expect(f.db.prepare('SELECT * FROM users').all()).toEqual(before);
+    expect(f.db.prepare('SELECT mode FROM system_controls').get()?.mode).toBe('maintenance');
+  }
+});
 
 it('keeps a legacy release verified while a vote comes and goes', async () => {
   // A legacy vote holds a claim for the length of one KV write; it must not fail the release.
@@ -114,6 +135,15 @@ it('keeps a legacy release verified while a vote comes and goes', async () => {
   await deployWorker(input, f);
   expect(f.current()).toBe(next);
   expect(f.command.mock.calls.some(([args]) => args[0] === 'rollback')).toBe(false);
+});
+
+it('refuses a maintenance release while a legacy vote is still in flight', async () => {
+  const f = fixture({ populated: true, maintenance: true });
+  f.db.exec("UPDATE system_controls SET mode='legacy'");
+  f.db.exec("INSERT INTO legacy_vote_inflight VALUES('vote','2026-09-26T12:00:00.000Z')");
+  f.db.exec("UPDATE system_controls SET mode='maintenance'");
+  await expect(deployWorker({ ...input, WORKER_EXPECTED_MODE: 'maintenance' }, f)).rejects.toMatchObject({ stage: 'schema_precheck', recovery: 'not_attempted' });
+  expect(f.command.mock.calls.some(([args]) => args.includes('migrations') || (args[0] === 'deploy' && !args.includes('--dry-run')))).toBe(false);
 });
 
 it('validates resources, migrates only schema and deploys additively with private config', async () => {

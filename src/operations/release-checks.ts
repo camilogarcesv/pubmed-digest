@@ -30,6 +30,7 @@ export function releaseEnvironment(input: NodeJS.ProcessEnv) {
     GITHUB_REF: z.literal('refs/heads/main'),
     GITHUB_EVENT_NAME: z.literal('workflow_dispatch'),
     GITHUB_ACTIONS: z.literal('true'),
+    WORKER_EXPECTED_MODE: z.enum(['legacy', 'maintenance']).default('legacy'),
   }).refine(v => v.GITHUB_SHA === v.EXPECTED_SHA, 'SHA mismatch')
     .refine(v => new Set([v.DIGEST_SERVICE_SECRET, v.IMPORT_SERVICE_SECRET, v.VOTES_READ_SECRET]).size === 3, 'Credentials must differ').parse(input);
 }
@@ -65,20 +66,20 @@ export function assertBindings(input: unknown, kvId: string, databaseId: string,
   if (requireD1 && (!names.has('DB') || !names.has('DIGEST_SERVICE_SECRET') || !names.has('CF_VERSION_METADATA'))) throw new Error('Internal API binding missing');
 }
 
-export function assertEmptySchema(tables: string[], counts: number[], mode: unknown, applied: string[], complete: boolean): void {
+export function assertEmptySchema(tables: string[], counts: number[], mode: unknown, applied: string[], complete: boolean, expectedMode = 'legacy'): void {
   const allowed = new Set<string>([...businessTables, ...operationTables, 'system_controls']);
   if (tables.some(t => !allowed.has(t))) throw new Error('Unexpected database table');
   if (counts.length !== tables.length || counts.some(n => !Number.isInteger(n) || n !== 0)) throw new Error('Database contains unexpected data');
   if (applied.some((name, i) => name !== migrations[i])) throw new Error('Unexpected migrations');
-  if (tables.includes('system_controls') && mode !== 'legacy') throw new Error('Database is not in legacy mode');
+  if (tables.includes('system_controls') && mode !== expectedMode) throw new Error('Database is not in expected mode');
   if (tables.length > 0 && applied.length === 0) throw new Error('Untracked database schema');
-  if (complete && (tables.length !== allowed.size || applied.length !== migrations.length || mode !== 'legacy')) {
+  if (complete && (tables.length !== allowed.size || applied.length !== migrations.length || mode !== expectedMode)) {
     throw new Error('Incomplete database schema');
   }
 }
 
-export function assertCompatibleSchema(tables: string[], counts: number[], mode: unknown, applied: string[], complete: boolean): void {
-  assertEmptySchema(tables, tables.map(() => 0), mode, applied, complete);
+export function assertCompatibleSchema(tables: string[], counts: number[], mode: unknown, applied: string[], complete: boolean, expectedMode = 'legacy'): void {
+  assertEmptySchema(tables, tables.map(() => 0), mode, applied, complete, expectedMode);
   if (counts.length !== tables.length || counts.some(n => !Number.isInteger(n) || n < 0)) throw new Error('Invalid counts');
   if (counts.some(n => n > 0) && !tables.includes('operation_lock')) throw new Error('Populated database lacks fencing');
 }

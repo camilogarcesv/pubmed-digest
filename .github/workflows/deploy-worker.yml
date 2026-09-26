@@ -13,11 +13,18 @@ on:
         required: true
         type: string
 
+      expected_mode:
+        description: Expected mode (enter maintenance before deploying an active D1 system)
+        required: true
+        default: legacy
+        type: choice
+        options: [legacy, maintenance]
+
 permissions:
   contents: read
 
 concurrency:
-  group: worker-production
+  group: pubmed-digest
   cancel-in-progress: false
 
 jobs:
@@ -88,6 +95,7 @@ jobs:
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
           VOTES_KV_ID: ${{ secrets.VOTES_KV_ID }}
           WORKER_EXPECTED_VERSION: ${{ inputs.expected_version }}
+          WORKER_EXPECTED_MODE: ${{ inputs.expected_mode }}
           IMPORT_SERVICE_SECRET: ${{ secrets.IMPORT_SERVICE_SECRET }}
           DIGEST_SERVICE_SECRET: ${{ secrets.DIGEST_SERVICE_SECRET }}
           VOTES_READ_SECRET: ${{ secrets.VOTES_READ_SECRET }}

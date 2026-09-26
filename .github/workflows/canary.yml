@@ -18,7 +18,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  backend:
+    runs-on: ubuntu-latest
+    environment: digest
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: mode
+        env:
+          VOTES_URL: ${{ secrets.VOTES_URL }}
+          DIGEST_SERVICE_SECRET: ${{ secrets.DIGEST_SERVICE_SECRET }}
+        run: pnpm d1:health
+
   canary:
+    needs: backend
+    if: needs.backend.outputs.mode == 'legacy'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -67,8 +90,8 @@ jobs:
   # named by the digest environment, plus a count of what D1 still lacks from the ledger and the
   # votes. It runs after the legacy canary so both never search PubMed at the same time.
   canary-d1:
-    needs: canary
-    if: ${{ !cancelled() }}
+    needs: [backend, canary]
+    if: ${{ !cancelled() && needs.backend.result == 'success' }}
     runs-on: ubuntu-latest
     environment: digest
     env:
@@ -100,7 +123,7 @@ jobs:
           exit "${PIPESTATUS[0]}"
 
       - name: Report D1 lag behind the ledger and votes
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.backend.outputs.mode == 'legacy' }}
         env:
           VOTES_READ_SECRET: ${{ secrets.VOTES_READ_SECRET }}
           LEGACY_VOTE_OWNER: ${{ secrets.LEGACY_VOTE_OWNER }}
@@ -111,7 +134,7 @@ jobs:
           exit "${PIPESTATUS[0]}"
 
       - name: Notify failure via Telegram
-        if: failure()
+        if: ${{ failure() && needs.backend.outputs.mode == 'legacy' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -129,3 +152,10 @@ jobs:
               "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" 2>/dev/null \
               || echo "Could not send the failure notification."
           fi
+
+      - name: Verify active D1 authority
+        if: ${{ !cancelled() && needs.backend.outputs.mode == 'd1' }}
+        run: pnpm d1:health
+      - name: Notify D1 operator through Worker
+        if: ${{ failure() && needs.backend.outputs.mode == 'd1' }}
+        run: pnpm d1:health -- --notify canary

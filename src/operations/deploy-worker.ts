@@ -91,10 +91,13 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     }
     const applied = rows.some(r => r.name === 'd1_migrations')
       ? (await sql('SELECT name FROM d1_migrations ORDER BY id')).map(r => z.string().parse(r.name)) : [];
-    assertCompatibleSchema(tables, counts, mode, applied, complete);
+    assertCompatibleSchema(tables, counts, mode, applied, complete, config.WORKER_EXPECTED_MODE);
     if ((await sql('PRAGMA foreign_key_check')).length !== 0) throw new Error('Foreign key check failed');
     await assertSchema(sql, applied);
-    if (tables.includes('users') && (await sql("SELECT id FROM users WHERE status!='paused'")).length) throw new Error('Expected paused users');
+    if (config.WORKER_EXPECTED_MODE === 'legacy' && tables.includes('users') && (await sql("SELECT id FROM users WHERE status!='paused'")).length) throw new Error('Expected paused users');
+    // Legacy votes keep flowing during a legacy release; under maintenance none may be pending.
+    if (config.WORKER_EXPECTED_MODE === 'maintenance' && tables.includes('legacy_vote_inflight') && (await sql('SELECT id FROM legacy_vote_inflight')).length) throw new Error('Legacy votes still in flight');
+    if (tables.includes('delivery_messages') && (await sql("SELECT id FROM delivery_messages WHERE status='sending'")).length) throw new Error('Delivery still in flight');
     return tables;
   };
   const origin = new URL(config.VOTES_URL).origin;
@@ -129,8 +132,8 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
       const response = await get(path, config.DIGEST_SERVICE_SECRET);
       if (response.status !== 200 || response.headers.get('cache-control') !== 'no-store') throw new Error('Internal API smoke failed');
       const body: unknown = await response.json();
-      if (path.endsWith('/mode')) z.object({ mode: z.literal('legacy'), version: z.literal(version) }).strict().parse(body);
-      else z.object({ users: z.array(z.unknown()).length(0) }).strict().parse(body);
+      if (path.endsWith('/mode')) z.object({ mode: z.literal(config.WORKER_EXPECTED_MODE), version: z.literal(version) }).strict().parse(body);
+      else z.object({ users: config.WORKER_EXPECTED_MODE === 'legacy' ? z.array(z.unknown()).length(0) : z.array(z.unknown()) }).strict().parse(body);
     }
     for (const secret of [undefined, config.DIGEST_SERVICE_SECRET, config.VOTES_READ_SECRET]) {
       if ((await get('/internal/v1/imports', secret, {})).status !== 401) throw new Error('Import credential isolation failed');
@@ -187,6 +190,11 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
   progress.stage = 'legacy_check';
   await verifyLegacy();
   progress.stage = 'schema_precheck';
+  if (config.WORKER_EXPECTED_MODE === 'maintenance') {
+    const response = await get('/internal/v1/admin/authority', config.IMPORT_SERVICE_SECRET);
+    if (!response.ok || response.headers.get('cache-control') !== 'no-store') throw new Error('Previous Worker does not support authority recovery');
+    z.object({ mode: z.literal('maintenance'), sending: z.literal(0), legacyWrites: z.literal(0) }).parse(await response.json());
+  }
   const tablesBefore = await checkDatabase(false);
   const owner = crypto.randomUUID();
   let locked = false;
@@ -256,7 +264,7 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
     await lease();
     await checkDatabase(true);
     assertPreserved(before, await snapshot(sql, tablesAfter, before));
-    console.log('Worker release verified; legacy operation preserved.');
+    console.log('Worker release verified; operating mode and data preserved.');
   } catch (error) {
     const failedStage = progress.stage;
     try { await lease(); } catch { throw releaseFailure(failedStage, error, 'manual_reconciliation'); }
@@ -271,6 +279,11 @@ async function executeDeployment(input: NodeJS.ProcessEnv, runtime: Runtime, pro
       await wrangler(['rollback', previous, '--yes', '--message', 'restore previous worker after failed verification']);
       if (await deployment() !== previous) throw new Error('Rollback verification failed');
       await verifyLegacy();
+      if (config.WORKER_EXPECTED_MODE === 'maintenance') {
+        await propagated(previous);
+        const response = await get('/internal/v1/mode', config.DIGEST_SERVICE_SECRET);
+        z.object({ mode: z.literal('maintenance'), version: z.literal(previous) }).parse(await response.json());
+      }
     }
     throw releaseFailure(failedStage, error, current === previous ? 'previous_retained' : 'previous_restored');
   } finally {
