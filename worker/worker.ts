@@ -5,6 +5,7 @@
 
 import { confirmedKeyboard, parseCallback, VOTE_NOT_SAVED, voteAck, voteKey, type Vote } from "../src/feedback.js";
 import { createBackend } from "./multiuser/worker.js";
+import { recordCallbackVote } from "./multiuser/telegram-votes.js";
 
 /** Telegram callback updates are a few KiB; the cap only bounds what an update can cost to read. */
 const MAX_UPDATE_BYTES = 64 * 1024;
@@ -119,21 +120,43 @@ async function handleWebhook(
     updateId,
   };
 
-  // Persist first; the reader is told "anotado" only for a vote that is actually stored.
-  // KV has no compare-and-set: the read-then-write below drops redelivered or out-of-order
-  // presses on a best-effort basis (writes are visible first where they were made).
+  // Persist first; the reader is told "anotado" only for a vote that is actually stored. The
+  // operating mode picks the store; maintenance, or a mode that cannot be read, stores nothing.
   let outcome: "recorded" | "superseded" | "failed";
+  let claim: string | undefined;
   try {
-    const stored = comparableUpdateId(await env.VOTES.get(key), Date.parse(vote.votedAt));
-    if (stored !== undefined && stored >= updateId) {
-      outcome = "superseded";
+    const mode = await env.DB.prepare("SELECT mode FROM system_controls WHERE singleton=1").first<string>("mode");
+    if (mode === "d1") {
+      outcome = await recordCallbackVote(env.DB, { chatId, messageId: String(cq.message.message_id), pmid: vote.pmid,
+        value: vote.value, votedAt: vote.votedAt, updateId });
+    } else if (mode === "legacy") {
+      // The claim, refused by D1 once maintenance begins, lets the final capture wait for this write.
+      claim = crypto.randomUUID();
+      await env.DB.prepare("INSERT INTO legacy_vote_inflight VALUES(?,?)").bind(claim, vote.votedAt).run();
+      // KV has no compare-and-set: the read-then-write below drops redelivered or out-of-order
+      // presses on a best-effort basis (writes are visible first where they were made).
+      const stored = comparableUpdateId(await env.VOTES.get(key), Date.parse(vote.votedAt));
+      if (stored !== undefined && stored >= updateId) {
+        outcome = "superseded";
+      } else {
+        await env.VOTES.put(key, JSON.stringify(vote));
+        outcome = "recorded";
+      }
     } else {
-      await env.VOTES.put(key, JSON.stringify(vote));
-      outcome = "recorded";
+      outcome = "failed";
     }
   } catch {
     // Includes KV's 429 for a second write to the same key within one second.
     outcome = "failed";
+  } finally {
+    if (claim) {
+      try {
+        await env.DB.prepare("DELETE FROM legacy_vote_inflight WHERE id=?").bind(claim).run();
+      } catch {
+        // An orphaned claim blocks sealing and D1 deploys until released with evidence.
+        console.error({ event: "legacy_vote_claim_unreleased" });
+      }
+    }
   }
 
   if (outcome === "failed") {

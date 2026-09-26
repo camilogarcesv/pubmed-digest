@@ -4,9 +4,10 @@ export const businessTables = [
   'users', 'profile_versions', 'profile_sources', 'destinations', 'articles',
   'digest_runs', 'digest_chunks', 'digest_items', 'user_articles',
   'delivery_messages', 'delivery_resolutions', 'votes', 'data_imports', 'vote_reconciliations', 'ledger_extensions', 'ledger_extension_blocks',
+  'authority_events', 'authority_checkpoint', 'telegram_vote_updates',
 ] as const;
-export const migrations = ['0001_multiuser.sql', '0002_draft_guards.sql', '0003_source_order.sql', '0004_operation_lock.sql', '0005_import_sessions.sql', '0006_vote_reconciliations.sql', '0007_ledger_extensions.sql', '0008_run_lifecycle.sql'];
-export const operationTables = ['operation_lock', 'operation_assertions', 'import_sessions', 'import_blocks', 'digest_assertions'];
+export const migrations = ['0001_multiuser.sql', '0002_draft_guards.sql', '0003_source_order.sql', '0004_operation_lock.sql', '0005_import_sessions.sql', '0006_vote_reconciliations.sql', '0007_ledger_extensions.sql', '0008_run_lifecycle.sql', '0009_authority_transition.sql'];
+export const operationTables = ['operation_lock', 'operation_assertions', 'import_sessions', 'import_blocks', 'digest_assertions', 'legacy_vote_inflight'];
 const hexId = z.string().regex(/^[a-f0-9]{32}$/).refine(s => !/^0+$/.test(s));
 const uuid = z.uuid().refine(s => s !== '00000000-0000-0000-0000-000000000000');
 

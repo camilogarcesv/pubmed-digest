@@ -7,6 +7,7 @@ import { ImportLease, ImportManifest } from '../../src/multiuser/import-contract
 import { VoteReconciliationRepository } from './reconciliations.js';
 import { D1DigestRepository } from './repository.js';
 import { RunRepository, type TelegramFetch } from './runs.js';
+import { AuthorityRepository } from './authority.js';
 
 // Binding shape comes from generated configuration; this handler works in either entrypoint.
 type BackendEnv = Pick<Cloudflare.Env, 'DB'> & { CF_VERSION_METADATA?: WorkerVersionMetadata; DIGEST_SERVICE_SECRET?: string; IMPORT_SERVICE_SECRET?: string; VOTES_READ_SECRET?: string; TELEGRAM_WEBHOOK_SECRET?: string; TELEGRAM_BOT_TOKEN?: string };
@@ -72,6 +73,11 @@ export function createBackend(fetchImpl: TelegramFetch = (input, init) => fetch(
         const secret = env.IMPORT_SERVICE_SECRET;
         if (!secret || [env.DIGEST_SERVICE_SECRET, env.VOTES_READ_SECRET, env.TELEGRAM_WEBHOOK_SECRET, env.TELEGRAM_BOT_TOKEN].includes(secret)
           || !(await authorized(request, secret))) throw new RequestError(401, 'unauthorized', 'No autorizado.');
+        if (path === '/internal/v1/admin/authority') {
+          const authority = new AuthorityRepository(env.DB, env.CF_VERSION_METADATA?.tag ?? 'unversioned');
+          if (request.method === 'GET') return json(await authority.status());
+          if (request.method === 'POST') return json(await authority.execute(await readJson(request)));
+        }
         const resolve = /^\/internal\/v1\/admin\/users\/([^/]+)\/digest-runs\/([^/]+)\/messages\/([^/]+)\/resolve$/.exec(path);
         if (resolve && request.method === 'POST') {
           await requireD1(env.DB);
@@ -149,6 +155,7 @@ export function createBackend(fetchImpl: TelegramFetch = (input, init) => fetch(
       }
       if (!(await authorized(request, env.DIGEST_SERVICE_SECRET))) throw new RequestError(401, 'unauthorized', 'No autorizado.');
       const repository = new D1DigestRepository(env.DB);
+      if (request.method === 'GET' && path === '/internal/v1/health') return json(await new AuthorityRepository(env.DB).verify());
       if (request.method === 'GET' && path === '/internal/v1/mode') {
         const row = await env.DB.prepare('SELECT mode FROM system_controls WHERE singleton=1').first<{ mode: string }>();
         // The answering version lets a release wait until its own code serves before smoke-testing it.

@@ -39,8 +39,8 @@ function fakeKv(
 function env(kv: KVNamespace, overrides: Partial<WorkerEnv> = {}): WorkerEnv {
   return {
     VOTES: kv,
-    // Legacy routes must never touch D1, including during an outage.
-    DB: new Proxy({} as D1Database, { get() { throw new Error("D1 unavailable"); } }),
+    // Real mode fencing and claims are covered with workerd; these tests isolate KV behavior.
+    DB: { prepare: () => ({ first: async () => 'legacy', bind() { return this; }, run: async () => ({ success: true }) }) } as unknown as D1Database,
     TELEGRAM_BOT_TOKEN: "bot-token",
     TELEGRAM_WEBHOOK_SECRET: "webhook-secret",
     VOTES_READ_SECRET: "read-secret",

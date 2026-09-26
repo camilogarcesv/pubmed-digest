@@ -164,7 +164,7 @@ export class ImportRepository {
       (SELECT mode FROM system_controls WHERE singleton=1) AS mode,
       (SELECT count(*) FROM digest_runs WHERE user_id=(SELECT id FROM scope)) AS runs,
       (SELECT count(*) FROM delivery_messages WHERE user_id=(SELECT id FROM scope)) AS messages`, ['mode', 'runs', 'messages'], u.id, proof);
-    if (safety?.mode !== 'legacy' || safety.runs || safety.messages) throw conflict();
+    if (!['legacy', 'maintenance'].includes(safety?.mode) || safety.runs || safety.messages) throw conflict();
     const provenance = await snapshotRows<{ id: string }>(this.db, 'SELECT * FROM data_imports WHERE user_id=? ORDER BY id',
       ['id', 'user_id', 'kind', 'source_ref', 'code_sha', 'checksum', 'counts_json', 'created_at'], u.id, proof);
     const expectedProvenance = (['profile', 'state', 'votes'] as const).map(kind => ({ id: `${id}:${kind}`, user_id: u.id, kind,

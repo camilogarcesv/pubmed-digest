@@ -25,7 +25,8 @@ export async function assertSchema(sql: Sql, applied: string[]): Promise<void> {
 export type Snapshot = Record<string, { columns: string[]; hash: string }>;
 export async function snapshot(sql: Sql, tables: string[], baseline?: Snapshot): Promise<Snapshot> {
   const result: Snapshot = {};
-  for (const table of tables.filter(t => !['operation_lock', 'operation_assertions'].includes(t))) {
+  // Leases and in-flight legacy vote claims are transient; a vote may come and go during a legacy release.
+  for (const table of tables.filter(t => !['operation_lock', 'operation_assertions', 'legacy_vote_inflight'].includes(t))) {
     const columns = baseline?.[table]?.columns ?? (await sql(`PRAGMA table_info(${table})`)).map(row => String(row.name)).sort();
     // Column names come from a schema already checked against tracked migrations.
     // New nullable/defaulted columns do not change the digest of pre-existing fields.

@@ -71,7 +71,7 @@ it('rejects invalid input and unsupported methods through the production router'
   expect((await invoke(wrongType)).status).toBe(415);
 });
 
-it('contains D1 failures while legacy votes still persist and export normally', async () => {
+it('fails votes closed on a mode outage while the frozen KV export remains readable', async () => {
   const log = vi.spyOn(console, 'error').mockImplementation(() => {});
   const outage = { DB: new Proxy(env.DB, { get() { throw new Error('private SQL and identifiers'); } }) };
   const failed = await invoke(request('/internal/v1/mode', 'test-service'), outage);
@@ -83,8 +83,32 @@ it('contains D1 failures while legacy votes still persist and export normally', 
     headers: { 'x-telegram-bot-api-secret-token': 'test-webhook' },
     body: JSON.stringify({ update_id: 1, callback_query: { id: 'test', data: 'v:123:1', message: { message_id: 7, chat: { id: 99 } } } }) });
   expect((await invoke(webhook, { ...outage, DIGEST_SERVICE_SECRET: undefined })).status).toBe(200);
-  expect(telegram).toHaveBeenCalledTimes(2);
+  expect(telegram).toHaveBeenCalledTimes(1);
   const exported = await invoke(request('/votes', 'test-export'), outage);
-  expect(await exported.json()).toMatchObject({ votes: [{ pmid: '123', value: 1, chatId: '99' }] });
+  expect(await exported.json()).toMatchObject({ votes: [] });
   expect(await env.DB.prepare('SELECT count(*) AS n FROM votes').first('n')).toBe(0);
+});
+
+it('guards authority operations with the import credential and reports health only for an active D1', async () => {
+  const admin = 'i'.repeat(64);
+  const authority = (secret?: string, method = 'GET', body?: string) =>
+    invoke(request('/internal/v1/admin/authority', secret, method, body), { IMPORT_SERVICE_SECRET: admin });
+  for (const secret of [undefined, 'test-service', 'test-export', 'test-webhook']) expect((await authority(secret)).status).toBe(401);
+  const status = await authority(admin);
+  expect(status.status).toBe(200);
+  expect(status.headers.get('cache-control')).toBe('no-store');
+  expect(await status.json()).toEqual({ mode: 'legacy', checkpoint: null, legacyWrites: 0, sending: 0, pendingLegacy: [] });
+  expect((await authority(admin, 'POST', JSON.stringify({ action: 'activate' }))).status).toBe(400);
+  const command = (action: string, expectedMode: string, extra = {}) => JSON.stringify({ id: crypto.randomUUID(), action, expectedMode, actor: 'test', reason: 'router', ...extra });
+  expect((await authority(admin, 'POST', command('maintenance', 'legacy'))).status).toBe(200);
+  // Only a release tagged with the sealing SHA may seal.
+  const seal = command('seal', 'maintenance', { importId: crypto.randomUUID(), codeSha: 'a'.repeat(40), stateSha: 'b'.repeat(40), firstPeriod: '2099-W01' });
+  expect((await authority(admin, 'POST', seal)).status).toBe(409);
+  for (const secret of [undefined, admin]) {
+    expect((await invoke(request('/internal/v1/health', secret), { IMPORT_SERVICE_SECRET: admin })).status).toBe(401);
+  }
+  const health = await invoke(request('/internal/v1/health', 'test-service'));
+  expect(health.status).toBe(409);
+  expect(health.headers.get('cache-control')).toBe('no-store');
+  expect(telegram).not.toHaveBeenCalled();
 });

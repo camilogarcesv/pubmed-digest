@@ -104,6 +104,18 @@ function fixture(options: { populated?: boolean; upgrade?: boolean; smokeFailure
   return { command, fetch: fetcher, wait: vi.fn(async (_ms: number) => {}), configPath: () => configPath, current: () => current, db };
 }
 
+it('keeps a legacy release verified while a vote comes and goes', async () => {
+  // A legacy vote holds a claim for the length of one KV write; it must not fail the release.
+  let claimed = false;
+  const f = fixture({ populated: true, beforeCommand: (db, args) => {
+    if (!claimed) { db.exec("INSERT INTO legacy_vote_inflight VALUES('vote','2026-09-26T12:00:00.000Z')"); claimed = true; }
+    if (args[0] === 'deploy' && !args.includes('--dry-run')) db.exec('DELETE FROM legacy_vote_inflight');
+  } });
+  await deployWorker(input, f);
+  expect(f.current()).toBe(next);
+  expect(f.command.mock.calls.some(([args]) => args[0] === 'rollback')).toBe(false);
+});
+
 it('validates resources, migrates only schema and deploys additively with private config', async () => {
   const f = fixture();
   await deployWorker(input, f);
