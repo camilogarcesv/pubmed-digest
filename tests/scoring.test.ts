@@ -10,16 +10,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 const profile = makeProfile();
 
-function toolUseMessage(scores: unknown): Anthropic.Message {
+function jsonMessage(scores: unknown): Anthropic.Message {
   return {
     id: "msg_test",
     type: "message",
     role: "assistant",
     model: "claude-haiku-4-5",
-    stop_reason: "tool_use",
+    stop_reason: "end_turn",
     stop_sequence: null,
     usage: { input_tokens: 1, output_tokens: 1 },
-    content: [{ type: "tool_use", id: "toolu_1", name: "submit_scores", input: { scores } }],
+    content: [{ type: "text", text: JSON.stringify({ scores }), citations: null }],
   } as unknown as Anthropic.Message;
 }
 
@@ -38,7 +38,7 @@ describe("AnthropicScorer", () => {
   it("scores every paper when the model returns them all", async () => {
     const papers = [paper("1"), paper("2"), paper("3")];
     const { fn, bodies } = queued([
-      toolUseMessage([
+      jsonMessage([
         { pmid: "1", relevance: 9, reason: "muy relevante" },
         { pmid: "2", relevance: 3, reason: "poco relevante" },
         { pmid: "3", relevance: 7, reason: "relevante" },
@@ -51,19 +51,40 @@ describe("AnthropicScorer", () => {
     expect(scored.map((s) => s.pmid)).toEqual(["1", "2", "3"]);
     expect(scored.find((s) => s.pmid === "1")!.relevance).toBe(9);
     expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.output_config?.format?.type).toBe("json_schema");
+    expect(bodies[0]!.tools).toBeUndefined();
+    expect(bodies[0]!.tool_choice).toBeUndefined();
+  });
+
+  it("treats a truncated response as invalid and retries it once", async () => {
+    const truncated = {
+      ...jsonMessage([]),
+      stop_reason: "max_tokens",
+      content: [{ type: "text", text: '{"scores":[{"pmid":"1","relev', citations: null }],
+    } as unknown as Anthropic.Message;
+    const { fn, bodies } = queued([
+      truncated,
+      jsonMessage([{ pmid: "1", relevance: 7, reason: "relevante" }]),
+    ]);
+    const scorer = new AnthropicScorer(fn, "m", 10);
+
+    const [scored] = await scorer.score([paper("1")], { profile });
+
+    expect(scored).toMatchObject({ pmid: "1", relevance: 7 });
+    expect(bodies).toHaveLength(2);
   });
 
   it("re-scores omitted pmids and drops hallucinated ones (reconciliation)", async () => {
     const papers = [paper("1"), paper("2"), paper("3")];
     const { fn, bodies } = queued([
       // First call omits pmid 3 and invents an unknown pmid 999.
-      toolUseMessage([
+      jsonMessage([
         { pmid: "1", relevance: 8, reason: "a" },
         { pmid: "2", relevance: 2, reason: "b" },
         { pmid: "999", relevance: 10, reason: "alucinado" },
       ]),
       // Reconcile call returns the missing pmid 3.
-      toolUseMessage([{ pmid: "3", relevance: 6, reason: "c" }]),
+      jsonMessage([{ pmid: "3", relevance: 6, reason: "c" }]),
     ]);
     const scorer = new AnthropicScorer(fn, "m", 10);
 
@@ -78,8 +99,8 @@ describe("AnthropicScorer", () => {
   it("fails instead of assigning artificial zeros after invalid responses", async () => {
     const papers = [paper("1"), paper("2")];
     const { fn, bodies } = queued([
-      toolUseMessage([{ pmid: "1", relevance: 15, reason: "fuera de rango" }]), // invalid
-      toolUseMessage([{ pmid: "1", relevance: 15, reason: "fuera de rango" }]), // retry invalid
+      jsonMessage([{ pmid: "1", relevance: 15, reason: "fuera de rango" }]), // invalid
+      jsonMessage([{ pmid: "1", relevance: 15, reason: "fuera de rango" }]), // retry invalid
     ]);
     const scorer = new AnthropicScorer(fn, "m", 10);
 
@@ -95,8 +116,8 @@ describe("AnthropicScorer", () => {
 
   it("fails when a PMID remains omitted after reconciliation", async () => {
     const { fn, bodies } = queued([
-      toolUseMessage([{ pmid: "1", relevance: 8, reason: "a" }]),
-      toolUseMessage([]),
+      jsonMessage([{ pmid: "1", relevance: 8, reason: "a" }]),
+      jsonMessage([]),
     ]);
     const scorer = new AnthropicScorer(fn, "m", 10);
 
@@ -109,7 +130,7 @@ describe("AnthropicScorer", () => {
 
   it("preserves an explicit valid zero returned by the model", async () => {
     const { fn } = queued([
-      toolUseMessage([{ pmid: "1", relevance: 0, reason: "No coincide con el perfil." }]),
+      jsonMessage([{ pmid: "1", relevance: 0, reason: "No coincide con el perfil." }]),
     ]);
     const scorer = new AnthropicScorer(fn, "m", 10);
 
@@ -159,7 +180,7 @@ describe("AnthropicScorer", () => {
     const fn: CreateMessage = async () => {
       calls++;
       if (calls === 1) {
-        return toolUseMessage([{ pmid: "1", relevance: 8, reason: "válido" }]);
+        return jsonMessage([{ pmid: "1", relevance: 8, reason: "válido" }]);
       }
       throw Object.assign(new Error("service unavailable"), { status: 503 });
     };
@@ -175,7 +196,7 @@ describe("AnthropicScorer", () => {
 
   it("accumulates token usage across calls for the run report", async () => {
     const { fn } = queued([
-      toolUseMessage([
+      jsonMessage([
         { pmid: "1", relevance: 9, reason: "a" },
         { pmid: "2", relevance: 8, reason: "b" },
       ]),
@@ -191,7 +212,7 @@ describe("AnthropicScorer", () => {
 
   it("re-ranks the finalists in a single call that tells the model to compare them", async () => {
     const { fn, bodies } = queued([
-      toolUseMessage([
+      jsonMessage([
         { pmid: "1", relevance: 10, reason: "el mejor" },
         { pmid: "2", relevance: 4, reason: "flojo" },
       ]),
@@ -211,7 +232,7 @@ describe("AnthropicScorer", () => {
   });
 
   it("skips the rerank call when there is nothing to compare", async () => {
-    const { fn, bodies } = queued([toolUseMessage([])]);
+    const { fn, bodies } = queued([jsonMessage([])]);
     const scorer = new AnthropicScorer(fn, "m", 10);
 
     const only = [{ ...paper("1"), relevance: 9, reason: "a" }];
@@ -220,7 +241,7 @@ describe("AnthropicScorer", () => {
   });
 
   it("passes publication types and MeSH terms to the model", async () => {
-    const { fn, bodies } = queued([toolUseMessage([{ pmid: "1", relevance: 9, reason: "a" }])]);
+    const { fn, bodies } = queued([jsonMessage([{ pmid: "1", relevance: 9, reason: "a" }])]);
     const scorer = new AnthropicScorer(fn, "m", 10);
 
     await scorer.score(
@@ -241,7 +262,7 @@ describe("AnthropicScorer", () => {
   });
 
   it("omits the metadata lines for records PubMed has not indexed yet", async () => {
-    const { fn, bodies } = queued([toolUseMessage([{ pmid: "1", relevance: 9, reason: "a" }])]);
+    const { fn, bodies } = queued([jsonMessage([{ pmid: "1", relevance: 9, reason: "a" }])]);
     const scorer = new AnthropicScorer(fn, "m", 10);
 
     await scorer.score([paper("1")], { profile });
@@ -251,12 +272,12 @@ describe("AnthropicScorer", () => {
     expect(userMessage).not.toContain("Tipo de publicación:");
   });
 
-  it("validates the documented sample tool output", async () => {
+  it("validates the documented sample output", async () => {
     const fixture = JSON.parse(
-      readFileSync(resolve(here, "fixtures/submit-scores.json"), "utf8"),
+      readFileSync(resolve(here, "fixtures/scores-output.json"), "utf8"),
     ) as { scores: unknown };
     const papers = [paper("40123456"), paper("40123457")];
-    const { fn } = queued([toolUseMessage(fixture.scores)]);
+    const { fn } = queued([jsonMessage(fixture.scores)]);
     const scorer = new AnthropicScorer(fn, "m", 10);
 
     const scored = await scorer.score(papers, { profile });

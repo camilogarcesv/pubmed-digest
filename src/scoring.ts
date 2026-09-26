@@ -5,41 +5,36 @@ import type { Profile } from "./profile.js";
 import { logger } from "./logger.js";
 import { chunk, sleep } from "./util.js";
 
-export const SCORE_TOOL_NAME = "submit_scores";
-
 const ScoreSchema = z.object({
   pmid: z.string(),
   relevance: z.number().int().min(0).max(10),
   reason: z.string().min(1),
 });
-const SubmitScoresSchema = z.object({ scores: z.array(ScoreSchema) });
+const ScoresOutputSchema = z.object({ scores: z.array(ScoreSchema) });
 
 export type RawScore = z.infer<typeof ScoreSchema>;
 
-// Forced-tool schema. NOTE: we intentionally do NOT set `strict: true` — strict schemas
-// reject `minimum`/`maximum`, so the 0-10 range is enforced by zod above instead.
-export const submitScoresTool: Anthropic.Tool = {
-  name: SCORE_TOOL_NAME,
-  description:
-    "Submit a relevance score for every paper provided. Return exactly one entry per pmid.",
-  input_schema: {
+// Structured-output schema: the API guarantees the response has this shape. It does not support
+// `minimum`/`maximum`, so the 0-10 range is stated in the description and enforced by zod above.
+export const scoresOutputFormat: Anthropic.JSONOutputFormat = {
+  type: "json_schema",
+  schema: {
     type: "object",
     properties: {
       scores: {
         type: "array",
+        description: "Exactly one entry per paper provided.",
         items: {
           type: "object",
           properties: {
             pmid: { type: "string", description: "PubMed ID, copied exactly from the input." },
             relevance: {
               type: "integer",
-              minimum: 0,
-              maximum: 10,
-              description: "0 = irrelevant, 10 = perfect match.",
+              description: "Integer from 0 to 10: 0 = irrelevant, 10 = perfect match.",
             },
             reason: {
               type: "string",
-              description: "One short sentence, in SPANISH, justifying the score.",
+              description: "One short sentence, in Spanish, justifying the score.",
             },
           },
           required: ["pmid", "relevance", "reason"],
@@ -158,8 +153,9 @@ export function buildSystemPrompt(ctx: ScoreContext): string {
   );
   lines.push("");
   lines.push(
-    "Puntúa CADA artículo con la herramienta submit_scores, copiando el pmid EXACTAMENTE. " +
-      "La razón debe ser UNA sola frase corta en ESPAÑOL. " +
+    "Puntúa todos los artículos y copia cada pmid tal como aparece: el sistema empareja cada " +
+      "puntaje con su artículo por ese pmid. " +
+      "La razón es una frase corta en español, porque el lector la ve como una línea del digest. " +
       'Si un artículo no tiene resumen (solo título), puntúalo con lo disponible e indícalo con "(sin resumen)".',
   );
   // COST: the digest is async-tolerant, so the Batch API (-50%) is a real future option if
@@ -324,8 +320,7 @@ export class AnthropicScorer implements Scorer {
       model: this.model,
       max_tokens: 4096,
       system: buildSystemPrompt(ctx),
-      tools: [submitScoresTool],
-      tool_choice: { type: "tool", name: SCORE_TOOL_NAME },
+      output_config: { format: scoresOutputFormat },
       messages: [{ role: "user", content: buildUserMessage(batch) }],
     };
 
@@ -334,16 +329,24 @@ export class AnthropicScorer implements Scorer {
     this.usage.inputTokens += res.usage?.input_tokens ?? 0;
     this.usage.outputTokens += res.usage?.output_tokens ?? 0;
 
-    const block = res.content.find((b) => b.type === "tool_use");
-    if (!block || block.type !== "tool_use") {
+    // The schema guarantee holds only for a complete turn: a max_tokens cut or a refusal can
+    // leave text that does not parse or does not match.
+    const block = res.content.find((b) => b.type === "text");
+    if (res.stop_reason !== "end_turn" || !block || block.type !== "text") {
       throw new InvalidScoringResponseError(
-        `Expected a ${SCORE_TOOL_NAME} tool_use block, got stop_reason=${res.stop_reason}`,
+        `Expected a complete JSON text block, got stop_reason=${res.stop_reason}`,
       );
     }
-    const parsed = SubmitScoresSchema.safeParse(block.input);
+    let output: unknown;
+    try {
+      output = JSON.parse(block.text);
+    } catch (err) {
+      throw new InvalidScoringResponseError(`Scoring output is not valid JSON: ${String(err)}`);
+    }
+    const parsed = ScoresOutputSchema.safeParse(output);
     if (!parsed.success) {
       throw new InvalidScoringResponseError(
-        `submit_scores output failed validation: ${parsed.error.message}`,
+        `Scoring output failed validation: ${parsed.error.message}`,
       );
     }
     return parsed.data.scores;
