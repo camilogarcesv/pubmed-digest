@@ -39,7 +39,7 @@ export const submitScoresTool: Anthropic.Tool = {
             },
             reason: {
               type: "string",
-              description: "One short sentence, in SPANISH, justifying the score.",
+              description: "One short sentence, in Spanish, justifying the score.",
             },
           },
           required: ["pmid", "relevance", "reason"],
@@ -158,8 +158,9 @@ export function buildSystemPrompt(ctx: ScoreContext): string {
   );
   lines.push("");
   lines.push(
-    "Puntúa CADA artículo con la herramienta submit_scores, copiando el pmid EXACTAMENTE. " +
-      "La razón debe ser UNA sola frase corta en ESPAÑOL. " +
+    "Puntúa todos los artículos y copia cada pmid tal como aparece: el sistema empareja cada " +
+      "puntaje con su artículo por ese pmid. " +
+      "La razón es una frase corta en español, porque el lector la ve como una línea del digest. " +
       'Si un artículo no tiene resumen (solo título), puntúalo con lo disponible e indícalo con "(sin resumen)".',
   );
   // COST: the digest is async-tolerant, so the Batch API (-50%) is a real future option if
