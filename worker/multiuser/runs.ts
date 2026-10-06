@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  DomainError, OpsAlert, Period, PrepareRun, ResolveMessage, UserId,
+  DomainError, OpsAlert, Period, PrepareRun, ResolveMessage, UserId, OpsAlertResult, OpsFailure,
   type DeliveryOutcome, type RunProgress, type UserContext,
 } from '../../src/multiuser/contracts.js';
 import { canonical } from '../../src/multiuser/import-contracts.js';
@@ -28,7 +28,10 @@ const PROGRESS = `SELECT r.id,r.user_id AS userId,r.run_key AS runKey,r.period,r
     WHERE m.user_id=r.user_id AND m.run_id=r.id GROUP BY m.status)) AS messages
   FROM digest_runs r`;
 
-type SendResult = { status: 'sent'; messageId: string } | { status: 'pending'; retryAfter: number } | { status: 'failed' | 'unknown' };
+type SendDiagnostic = Omit<z.infer<typeof OpsFailure>, 'count'>;
+type SendResult = { status: 'sent'; messageId: string }
+  | ({ status: 'pending'; retryAfter: number } & SendDiagnostic)
+  | ({ status: 'failed' | 'unknown' } & SendDiagnostic);
 type RunHead = { status: string; kind: string; expectedItems: number; metrics: string };
 type MessageRow = { id: string; status: string; pmid: string | null; votable: number; payload_json: string; updated_at: string; external_id: string };
 type Item = { pmid: string; disposition: string };
@@ -314,7 +317,7 @@ export class RunRepository {
    * Operator alert as plain text (no HTML parsing) to active operations destinations of active users,
    * including operations-only chats that receive no digest. Alert text must carry no other user's data.
    */
-  async opsAlert(input: unknown): Promise<{ sent: number; failed: number }> {
+  async opsAlert(input: unknown): Promise<z.infer<typeof OpsAlertResult>> {
     const { text } = OpsAlert.parse(input);
     if (!this.telegram.token) throw new Error('Telegram is not configured');
     // No write to fence in a transaction: the external effect itself is gated on the current mode.
@@ -327,11 +330,18 @@ export class RunRepository {
     const destinations = destinationResult.results as { external_id: string }[];
     if (destinations.length > MAX_OPS_DESTINATIONS) throw conflict('Too many operations destinations');
     let sent = 0, failed = 0;
+    const failures: z.infer<typeof OpsFailure>[] = [];
     for (const d of destinations) {
       const result = await this.send({ chat_id: d.external_id, text, disable_web_page_preview: true });
-      if (result.status === 'sent') sent++; else failed++;
+      if (result.status === 'sent') sent++;
+      else {
+        failed++;
+        const previous = failures.find(f => f.category === result.category && f.httpStatus === result.httpStatus);
+        if (previous) previous.count++;
+        else failures.push({ category: result.category, ...(result.httpStatus === undefined ? {} : { httpStatus: result.httpStatus }), count: 1 });
+      }
     }
-    return { sent, failed };
+    return { sent, failed, ...(failures.length ? { failures } : {}) };
   }
 
   /** Administrative resolution of one failed/unknown message, audited in delivery_resolutions. */
@@ -363,27 +373,27 @@ export class RunRepository {
         signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS), redirect: 'error',
       });
     } catch {
-      return { status: 'unknown' };
+      return { status: 'unknown', category: 'transport_error' };
     }
     // Flood control and rejected requests are definite answers that nothing was sent.
     if (response.status === 429) {
       const retryAfter = await response.json().then(b => z.object({ parameters: z.object({ retry_after: z.number().int().min(1).max(3600) }) })
         .parse(b).parameters.retry_after).catch(() => 1);
-      return { status: 'pending', retryAfter };
+      return { status: 'pending', retryAfter, category: 'rate_limited', httpStatus: 429 };
     }
     if (response.status >= 400 && response.status < 500) {
       await response.body?.cancel();
-      return { status: 'failed' };
+      return { status: 'failed', category: response.status === 401 ? 'authentication' : response.status === 403 ? 'forbidden' : 'invalid_request', httpStatus: response.status };
     }
     if (!response.ok) {
       await response.body?.cancel();
-      return { status: 'unknown' };
+      return { status: 'unknown', category: 'server_error', httpStatus: response.status };
     }
     try {
       const sent = z.object({ ok: z.literal(true), result: z.object({ message_id: z.number().int().nonnegative() }) }).parse(await response.json());
       return { status: 'sent', messageId: String(sent.result.message_id) };
     } catch {
-      return { status: 'unknown' };
+      return { status: 'unknown', category: 'invalid_response', httpStatus: response.status };
     }
   }
 }

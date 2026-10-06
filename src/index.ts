@@ -36,6 +36,7 @@ interface CommonFlags {
   backend: "legacy" | "d1";
   user?: string;
   countsOnly: boolean;
+  noOpsAlert: boolean;
 }
 
 async function main(): Promise<void> {
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
       backend: { type: "string", default: "legacy" },
       user: { type: "string" },
       "counts-only": { type: "boolean", default: false },
+      "no-ops-alert": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -82,6 +84,7 @@ async function main(): Promise<void> {
     backend: parseBackend(values.backend),
     user: values.user,
     countsOnly: Boolean(values["counts-only"]),
+    noOpsAlert: Boolean(values["no-ops-alert"]),
   };
 
   if (flags.fromCache && flags.rescore) {
@@ -92,6 +95,9 @@ async function main(): Promise<void> {
   }
   if (flags.countsOnly && (flags.backend !== "d1" || !flags.dryRun)) {
     throw new Error("--counts-only applies to a D1 preview: use it with --backend d1 --dry-run.");
+  }
+  if (flags.noOpsAlert && (flags.backend !== "d1" || command !== "digest")) {
+    throw new Error("--no-ops-alert applies only to the D1 digest.");
   }
 
   if (command === "digest") {
@@ -209,10 +215,11 @@ async function runD1Digest(flags: CommonFlags): Promise<void> {
     backend: backendFromEnv(env),
     scorerFor: () => makeAnthropicScorer(env.ANTHROPIC_API_KEY, config.model, config.batchSize),
     print: publicLog ? undefined : (text) => process.stdout.write(text),
-  }, { title: digestTitle(), dryRun: flags.dryRun, limit: flags.limit, user: flags.user });
+  }, { title: digestTitle(), dryRun: flags.dryRun, limit: flags.limit, user: flags.user, notifyOperators: !flags.noOpsAlert });
   // Run ids and states only: slugs and user ids stay out of public job logs.
   for (const o of summary.outcomes) {
-    logger.info("user digest", { state: o.state, runId: o.runId, messageId: o.messageId, error: o.error, ...(o.metrics?.toFields(config.pricing) ?? {}) });
+    logger.info("user digest", { state: o.state, runId: o.runId, messageId: o.messageId, error: o.error, ...o.diagnostic, ...(o.metrics?.toFields(config.pricing) ?? {}) });
+    if (o.diagnostic) writeStepSummary(`### Scoring failed\n\nProvider: ${o.diagnostic.provider}; cause: ${o.diagnostic.failureCode}; HTTP: ${o.diagnostic.providerStatus ?? 'unavailable'}.\n`);
     if (o.metrics) writeStepSummary(o.metrics.toMarkdown(config.pricing, `Digest D1 (${o.state})`));
   }
   if (summary.halted) logger.error("digest stopped: the operating mode changed during the run");
@@ -344,6 +351,7 @@ function printHelp(): void {
       "  --backend d1       Digest multiusuario vía el Worker (D1). Por defecto: legacy.",
       "  --user <slug>      Con --backend d1: solo ese usuario (--dry-run lee usuarios pausados).",
       "  --counts-only      Con --backend d1 --dry-run: solo conteos, sin imprimir el digest.",
+      "  --no-ops-alert     Con --backend d1: el workflow se encarga del aviso de fallo.",
       "  -h, --help         Muestra esta ayuda.",
       "",
       "La cobertura (revistas y búsquedas permanentes) se edita en profile.yaml.",

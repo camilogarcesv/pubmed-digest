@@ -95,6 +95,16 @@ export const PrepareRun = z.strictObject({
   destinations: z.array(z.strictObject({ destinationId: z.uuid(), messages: z.array(OutboundMessage).min(1).max(36) })).min(1).max(2),
 });
 export const OpsAlert = z.strictObject({ text: z.string().trim().min(1).max(1500) });
+export const OpsFailure = z.object({
+  category: z.enum(['authentication', 'forbidden', 'invalid_request', 'rate_limited', 'server_error', 'transport_error', 'invalid_response']),
+  httpStatus: z.number().int().min(100).max(599).optional(),
+  count: z.number().int().min(1).max(5),
+});
+/** Additive diagnostics: old Workers may return only sent/failed. No raw upstream text. */
+export const OpsAlertResult = z.object({
+  sent: z.number().int().min(0).max(5), failed: z.number().int().min(0).max(5),
+  failures: z.array(OpsFailure).max(5).optional(),
+});
 export const ResolveMessage = z.strictObject({
   action: z.enum(['mark_sent', 'retry']),
   actor: z.string().trim().min(1).max(100),

@@ -6,7 +6,7 @@ import type { z } from "zod";
 import type { AppConfig } from "../config.js";
 import type { Profile } from "../profile.js";
 import type { Paper, ScoredPaper } from "../types.js";
-import type { Scorer } from "../scoring.js";
+import { ScoringError, scoringDiagnostics, type Scorer } from "../scoring.js";
 import { journalTerm, topicTerm } from "../pubmed.js";
 import { collectFromResults, prefilter, scoreAndRerank, searchSources, type PaperFetcher, type PipelineDeps, type Source } from "../pipeline.js";
 import { renderDigestParts, selectForDigest, type Selection } from "../digest.js";
@@ -42,6 +42,8 @@ export interface OrchestratorOptions {
   limit?: number;
   /** Only this user, by slug, whatever its status (dry runs and canaries read paused users). */
   user?: string;
+  /** CI owns its final notification; direct CLI runs still alert by default. */
+  notifyOperators?: boolean;
 }
 
 export type UserState = "delivered" | "already_delivered" | "previewed" | "blocked" | "paused" | "failed";
@@ -53,6 +55,7 @@ export interface UserOutcome {
   /** A message awaiting reconciliation when the state is blocked. */
   messageId?: string;
   error?: string;
+  diagnostic?: ReturnType<typeof scoringDiagnostics>;
   metrics?: RunMetrics;
 }
 export interface DigestSummary {
@@ -170,7 +173,9 @@ export async function runMultiuserDigest(deps: OrchestratorDeps, opts: Orchestra
     } catch (error) {
       if (halts(error)) halted = true;
       else logger.error("user digest failed", { runId: f.runId, error: message(error) });
-      outcome(f.user, "failed", { ...(halted ? stopped : { error: message(error) }), metrics: f.metrics, ...(f.runId ? { runId: f.runId } : {}) });
+      outcome(f.user, "failed", { ...(halted ? stopped : { error: message(error) }),
+        ...(error instanceof ScoringError ? { diagnostic: scoringDiagnostics(error) } : {}),
+        metrics: f.metrics, ...(f.runId ? { runId: f.runId } : {}) });
     }
   }
 
@@ -187,7 +192,7 @@ export async function runMultiuserDigest(deps: OrchestratorDeps, opts: Orchestra
   }
 
   // Alerts go through the Worker, which refuses them outside D1 mode; the job still ends non-zero.
-  if (!opts.dryRun && !halted) await alertOperators(deps.backend, period, outcomes);
+  if (!opts.dryRun && !halted && opts.notifyOperators !== false) await alertOperators(deps.backend, period, outcomes);
   return { period, outcomes, ...(halted ? { halted: "mode_unavailable" as const } : {}) };
 }
 
@@ -421,7 +426,7 @@ async function alertOperators(backend: DigestBackend, period: string, outcomes: 
   const lines = problems.map(o => `• ${o.runId ?? "sin run"}: ${o.state}${o.messageId ? ` (mensaje ${o.messageId})` : ""}`);
   try {
     const result = await backend.opsAlert([`⚠️ Digest ${period}: ${problems.length} ejecución(es) requieren atención.`, ...lines].join("\n").slice(0, 1500));
-    if (result.sent === 0) logger.error("operator alert reached nobody", result);
+    if (result.sent === 0 || result.failed > 0) logger.error("operator alert incomplete", result);
   } catch (error) {
     logger.error("operator alert failed", { error: String(error) });
   }

@@ -249,7 +249,7 @@ describe("multi-user execution", () => {
     expect(backend.runList.map(r => r.itemList.map(i => i.article.pmid))).toEqual([["1", "2"], ["5"]]);
   });
 
-  it("isolates one user's failure, alerts operators with run states only and ends in need of attention", async () => {
+  it.each([true, false])("isolates a scoring failure and leaves notification ownership explicit (notify=%s)", async (notifyOperators) => {
     const backend = new FakeBackend();
     const alice = user("alice", [{ kind: "journal", value: "A" }]);
     const bob = user("bob", [{ kind: "journal", value: "B" }]);
@@ -257,14 +257,18 @@ describe("multi-user execution", () => {
     backend.users = [alice, bob, carol];
     const pubmed = new FakeFetcher({ [journalTerm("A")]: ["1"], [journalTerm("B")]: ["2"], [journalTerm("C")]: ["3"] }, new Set([journalTerm("C")]));
     const { d } = deps(backend, pubmed, [new FakeScorer(), new FakeScorer(true)]);
-    const summary = await runMultiuserDigest(d, { title, dryRun: false });
+    const summary = await runMultiuserDigest(d, { title, dryRun: false, notifyOperators });
     expect(summary.outcomes.map(o => [o.slug, o.state, o.error])).toEqual([
       ["carol", "failed", "Every source of this profile failed"], ["bob", "failed", "scoring failed"], ["alice", "delivered", undefined],
     ]);
-    expect(backend.alerts).toHaveLength(1);
-    expect(backend.alerts[0]).toContain("2 ejecución(es)");
-    for (const u of [alice, bob, carol]) expect(backend.alerts[0]).not.toContain(u.slug);
+    expect(backend.alerts).toHaveLength(notifyOperators ? 1 : 0);
+    if (notifyOperators) {
+      expect(backend.alerts[0]).toContain("2 ejecución(es)");
+      for (const u of [alice, bob, carol]) expect(backend.alerts[0]).not.toContain(u.slug);
+    }
     expect(backend.runList.map(r => r.userId)).toEqual([alice.userId]);
+    expect(backend.delivered.every(m => m.userId === alice.userId)).toBe(true);
+    expect(backend.history.has(bob.userId)).toBe(false);
   });
 
   it("refuses to report an empty week when every source failed, yet still delivers started runs", async () => {

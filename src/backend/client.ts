@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 import {
-  CreateRun, DigestItem, PrepareRun, SystemMode, UserId,
+  CreateRun, DigestItem, PrepareRun, SystemMode, UserId, OpsAlertResult,
   type DeliveryOutcome, type EvalVote, type RunProgress, type RunRecord, type UserContext,
 } from "../multiuser/contracts.js";
 import { chunk, sleep } from "../util.js";
@@ -23,7 +23,7 @@ export interface DigestBackend {
   prepare(userId: string, runId: string, body: z.infer<typeof PrepareRun>): Promise<RunProgress>;
   deliver(userId: string, runId: string, destinationId: string): Promise<DeliveryOutcome>;
   abort(userId: string, runId: string): Promise<RunProgress>;
-  opsAlert(text: string): Promise<{ sent: number; failed: number }>;
+  opsAlert(text: string): Promise<z.infer<typeof OpsAlertResult>>;
 }
 
 /** A refused request; `code` is the API's error code (e.g. mode_unavailable, conflict). */
@@ -116,7 +116,7 @@ export function httpBackend(
     async abort(userId, runId) { return Progress.parse(await call(`${run(userId, runId)}/abort`, { body: {} })); },
     // An alert that timed out may have been sent: never retried, so it is never duplicated.
     async opsAlert(text) {
-      return z.object({ sent: z.number(), failed: z.number() }).parse(await call("/ops/alerts", { body: { text } }, false));
+      return OpsAlertResult.parse(await call("/ops/alerts", { body: { text } }, false));
     },
   };
 }
