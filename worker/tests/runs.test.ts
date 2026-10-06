@@ -461,7 +461,8 @@ describe('Free plan budget', () => {
     // 4 reads + guard/update/clear + 36 inserts + progress; the router adds one mode read.
     expect(c.counter.queries).toBe(44);
     let worst = 0;
-    for (;;) {
+    // Bounded: a send that always fails keeps answering blocked, which must fail this test, not hang it.
+    for (let i = 0; i < 64; i++) {
       c.counter.queries = 0;
       const before = t.calls.length;
       const outcome = await runs.deliverNext(alice, d.runId, aliceDestination);
