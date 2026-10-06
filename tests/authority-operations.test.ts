@@ -41,7 +41,9 @@ it('serializes authority, deployment and digest; D1 jobs cannot write state or r
   for (const denied of ['TELEGRAM_', 'VOTES_READ_SECRET', 'state.json', 'git push', 'contents":"write']) expect(serialized).not.toContain(denied);
   expect(serialized).toContain('--backend d1');
   expect(serialized).not.toContain('--dry-run');
-  expect(d1.steps.at(-1)).toMatchObject({ if: 'failure()', run: 'pnpm d1:health -- --notify digest' });
+  expect(serialized).toContain('--no-ops-alert');
+  expect(serialized).not.toContain('--notify digest');
+  expect(digest.jobs['notify-d1'].needs).toEqual(['backend', 'digest-d1']);
 });
 it('offers every audited operation behind the same production protection as a release', () => {
   const authority = parse(readFileSync('.github/workflows/authority.yml', 'utf8'));

@@ -81,6 +81,20 @@ export class ScoringError extends Error {
   }
 }
 
+/** Public diagnostics are derived from status/kind only, never provider text or article data. */
+export function scoringDiagnostics(error: ScoringError) {
+  const cause = error.cause;
+  const raw = typeof cause === 'object' && cause !== null && 'status' in cause ? cause.status : undefined;
+  const providerStatus = typeof raw === 'number' && Number.isInteger(raw) && raw >= 100 && raw <= 599 ? raw : undefined;
+  const failureCode = error.kind === 'budget_exceeded' ? 'budget_exceeded'
+    : providerStatus === 401 ? 'authentication'
+    : providerStatus === 403 ? 'permission_denied'
+    : error.kind === 'invalid_response' ? 'invalid_response'
+    : providerStatus === 429 ? 'rate_limited'
+    : error.kind === 'transient_api' ? 'transient_api' : 'invalid_request';
+  return { provider: 'anthropic' as const, failureCode, ...(providerStatus === undefined ? {} : { providerStatus }) };
+}
+
 class InvalidScoringResponseError extends Error {
   override readonly name = "InvalidScoringResponseError";
 }
@@ -300,6 +314,7 @@ export class AnthropicScorer implements Scorer {
         logger[willRetry ? "warn" : "error"]("scoring batch attempt failed", {
           attempt: attempt + 1,
           kind: failure.kind,
+          ...scoringDiagnostics(failure),
           willRetry,
           pmids: failure.pmids,
           error: failure.message,

@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 import { AnthropicScorer, ScoringError, type CreateMessage } from "../src/scoring.js";
 import { makePaper as paper, makeProfile } from "./helpers.js";
+import { redactFields } from '../src/logger.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -35,6 +36,27 @@ function queued(responses: Anthropic.Message[]) {
 }
 
 describe("AnthropicScorer", () => {
+  it.each([
+    [401, 'invalid x-api-key', 'authentication', 1],
+    [403, 'private forbidden response', 'permission_denied', 1],
+    [400, 'credit balance is too low', 'budget_exceeded', 1],
+    [400, 'invalid request', 'invalid_request', 1],
+    [429, 'rate limit', 'rate_limited', 2],
+    [503, 'upstream failed', 'transient_api', 2],
+  ])('keeps actionable public diagnostics for HTTP %s without leaking upstream text', async (status, detail, failureCode, attempts) => {
+    redactFields('pmid', 'pmids', 'error', 'reason');
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const call = vi.fn(async () => { throw Object.assign(new Error(`${detail} secret-token private-title`), { status, error: { private: 'private-profile' } }); });
+      const scorer = new AnthropicScorer(call, 'm', 10, async () => {});
+      await expect(scorer.score([paper('98765432')], { profile })).rejects.toBeInstanceOf(ScoringError);
+      expect(call).toHaveBeenCalledTimes(attempts as number);
+      const logs = write.mock.calls.map(c => String(c[0])).join('');
+      expect(logs).toContain(`"failureCode":"${failureCode}"`);
+      expect(logs).toContain(`"providerStatus":${status}`);
+      expect(logs).not.toMatch(/secret-token|private-title|private-profile|98765432/);
+    } finally { write.mockRestore(); }
+  });
   it("scores every paper when the model returns them all", async () => {
     const papers = [paper("1"), paper("2"), paper("3")];
     const { fn, bodies } = queued([

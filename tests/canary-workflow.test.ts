@@ -46,7 +46,9 @@ describe("Saturday canary workflow", () => {
     expect(lag).toMatchObject({ if: "${{ !cancelled() && needs.backend.outputs.mode == 'legacy' }}" });
     expect(lag.run).toContain("pnpm d1:lag");
     expect(d1.steps.find(s => s.name === 'Notify failure via Telegram')?.if).toContain("mode == 'legacy'");
-    expect(d1.steps.at(-1)).toMatchObject({ name: 'Notify D1 operator through Worker', run: 'pnpm d1:health -- --notify canary' });
+    expect(smoke.run).toContain('--no-ops-alert');
+    expect(JSON.stringify(d1)).not.toContain('--notify canary');
+    expect(workflow.jobs['notify-d1']?.needs).toEqual(['backend', 'canary-d1']);
   });
 });
 

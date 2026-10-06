@@ -157,10 +157,30 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           EUTILS_EMAIL: ${{ secrets.EUTILS_EMAIL }}
-        run: pnpm dev:digest -- --backend d1
+        run: pnpm dev:digest -- --backend d1 --no-ops-alert
       - name: Verify D1 after delivery
         if: ${{ !cancelled() }}
         run: pnpm d1:health
+
+  notify-d1:
+    needs: [backend, digest-d1]
+    if: ${{ always() && (needs.backend.result == 'failure' || needs.backend.result == 'cancelled' || (needs.backend.outputs.mode == 'd1' && (needs.digest-d1.result == 'failure' || needs.digest-d1.result == 'cancelled'))) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: digest
+    env:
+      VOTES_URL: ${{ secrets.VOTES_URL }}
+      DIGEST_SERVICE_SECRET: ${{ secrets.DIGEST_SERVICE_SECRET }}
+      FAILURE_STAGE: ${{ needs.backend.result != 'success' && 'backend' || 'digest' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Notify operator through Worker
-        if: failure()
-        run: pnpm d1:health -- --notify digest
+        run: pnpm d1:health -- --notify digest --stage "$FAILURE_STAGE"

@@ -395,6 +395,27 @@ describe('mode fencing', () => {
 });
 
 describe('operations alerts', () => {
+  it.each([
+    [401, 'authentication'], [403, 'forbidden'], [400, 'invalid_request'],
+    [429, 'rate_limited'], [503, 'server_error'], [200, 'invalid_response'],
+  ])('reports HTTP %s safely without retrying an alert', async (status, category) => {
+    await seedUsers(); await d1Mode();
+    await env.DB.prepare('UPDATE destinations SET ops_enabled=1 WHERE id=?').bind(aliceDestination).run();
+    const t = telegram([Response.json({ description: 'private-chat secret-token', parameters: { retry_after: 2 } }, { status: Number(status) })]);
+    const result = await new RunRepository(env.DB, { token, fetch: t.fetch }).opsAlert({ text: 'Test notice' });
+    expect(result).toEqual({ sent: 0, failed: 1, failures: [{ category, httpStatus: status, count: 1 }] });
+    expect(JSON.stringify(result)).not.toMatch(/private-chat|secret-token|external_id/);
+    expect(t.calls).toHaveLength(1);
+    expect(await env.DB.prepare('SELECT count(*) n FROM delivery_messages').first<number>('n')).toBe(0);
+  });
+  it('aggregates failures and treats a lost response as unknown, with no retry', async () => {
+    await seedUsers(); await d1Mode();
+    await env.DB.prepare('UPDATE destinations SET ops_enabled=1').run();
+    const t = telegram([new Error('private timeout'), new Error('private timeout')]);
+    expect(await new RunRepository(env.DB, { token, fetch: t.fetch }).opsAlert({ text: 'Test' }))
+      .toEqual({ sent: 0, failed: 2, failures: [{ category: 'transport_error', count: 2 }] });
+    expect(t.calls).toHaveLength(2);
+  });
   it('sends plain text only to active operations destinations', async () => {
     await seedUsers();
     await d1Mode();
