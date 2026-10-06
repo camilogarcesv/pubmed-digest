@@ -28,6 +28,8 @@ function telegram(script: (Response | Error | (() => Promise<Response>))[] = [])
   const calls: { url: string; body: Record<string, unknown> }[] = [];
   let id = 500;
   const fetch: TelegramFetch = async (input, init) => {
+    // The runtime validates the request options as the real fetch would (e.g. workerd has no redirect: 'error').
+    new Request(input, init);
     calls.push({ url: String(input), body: JSON.parse(String(init?.body)) });
     const step = script.shift();
     if (step instanceof Error) throw step;
@@ -397,7 +399,7 @@ describe('mode fencing', () => {
 describe('operations alerts', () => {
   it.each([
     [401, 'authentication'], [403, 'forbidden'], [400, 'invalid_request'],
-    [429, 'rate_limited'], [503, 'server_error'], [200, 'invalid_response'],
+    [429, 'rate_limited'], [503, 'server_error'], [200, 'invalid_response'], [302, 'invalid_response'],
   ])('reports HTTP %s safely without retrying an alert', async (status, category) => {
     await seedUsers(); await d1Mode();
     await env.DB.prepare('UPDATE destinations SET ops_enabled=1 WHERE id=?').bind(aliceDestination).run();

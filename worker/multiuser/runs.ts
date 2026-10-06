@@ -368,9 +368,10 @@ export class RunRepository {
   private async send(body: Record<string, unknown>): Promise<SendResult> {
     let response: Response;
     try {
+      // Workers reject redirect: 'error' (every send would throw); 'manual' never follows one, so the token stays on this host.
       response = await this.telegram.fetch(`https://api.telegram.org/bot${this.telegram.token}/sendMessage`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-        signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS), redirect: 'error',
+        signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS), redirect: 'manual',
       });
     } catch {
       return { status: 'unknown', category: 'transport_error' };
@@ -385,9 +386,10 @@ export class RunRepository {
       await response.body?.cancel();
       return { status: 'failed', category: response.status === 401 ? 'authentication' : response.status === 403 ? 'forbidden' : 'invalid_request', httpStatus: response.status };
     }
+    // A 5xx or an unfollowed redirect proves nothing either way: unknown, never retried automatically.
     if (!response.ok) {
       await response.body?.cancel();
-      return { status: 'unknown', category: 'server_error', httpStatus: response.status };
+      return { status: 'unknown', category: response.status >= 500 ? 'server_error' : 'invalid_response', httpStatus: response.status };
     }
     try {
       const sent = z.object({ ok: z.literal(true), result: z.object({ message_id: z.number().int().nonnegative() }) }).parse(await response.json());
